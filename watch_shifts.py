@@ -125,24 +125,56 @@ def save_state(shift_ids: set[str]) -> None:
     )
 
 
-def login(page) -> None:
+def snapshot(page, name: str) -> None:
+    """Save a screenshot + HTML dump of the current page state for debugging."""
+    try:
+        page.screenshot(path=f"discover_{name}.png", full_page=True)
+        Path(f"discover_{name}.html").write_text(page.content(), encoding="utf-8")
+        log(f"Saved discover_{name}.png / discover_{name}.html")
+    except Exception as exc:  # noqa: BLE001
+        log(f"WARNING: could not save snapshot '{name}': {exc}")
+
+
+def login(page, debug: bool = False) -> None:
     log(f"Navigating to {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="networkidle")
 
-    page.fill(SELECTORS["login_email"], SMENY_EMAIL)
-    page.fill(SELECTORS["login_password"], SMENY_PASSWORD)
-    page.click(SELECTORS["login_submit"])
+    if debug:
+        snapshot(page, "01_login_page")
+
+    try:
+        page.fill(SELECTORS["login_email"], SMENY_EMAIL, timeout=10000)
+        page.fill(SELECTORS["login_password"], SMENY_PASSWORD, timeout=10000)
+        page.click(SELECTORS["login_submit"], timeout=10000)
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERROR: could not find/fill the login form fields: {exc}")
+        if debug:
+            snapshot(page, "02_login_form_error")
+            log(
+                "Login form selectors are wrong for this site. Open "
+                "discover_01_login_page.html, find the actual email/password "
+                "input fields and the submit button, and update "
+                "SELECTORS['login_email'], SELECTORS['login_password'], and "
+                "SELECTORS['login_submit'] at the top of this file."
+            )
+            sys.exit(0)
+        raise
 
     # Give the SPA time to redirect/render the dashboard.
     page.wait_for_load_state("networkidle")
+
+    if debug:
+        snapshot(page, "03_after_login_submit")
+
     try:
         page.wait_for_selector(SELECTORS["logged_in_marker"], timeout=15000)
         log("Login looks successful.")
     except Exception:  # noqa: BLE001
         log(
             "WARNING: could not confirm login succeeded (logged_in_marker not "
-            "found). Continuing anyway -- check discover_screenshot.png if "
-            "this keeps happening."
+            "found). This may be fine -- check discover_03_after_login_submit.png "
+            "to see if you're actually logged in; if so, just update "
+            "SELECTORS['logged_in_marker'] to match something real on that page."
         )
 
 
@@ -182,16 +214,17 @@ def run_discover() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        login(page)
-        page.goto(SHIFTS_URL, wait_until="networkidle")
-        page.screenshot(path="discover_screenshot.png", full_page=True)
-        Path("discover_page.html").write_text(page.content(), encoding="utf-8")
+        login(page, debug=True)
+        try:
+            page.goto(SHIFTS_URL, wait_until="networkidle")
+        except Exception as exc:  # noqa: BLE001
+            log(f"WARNING: navigating to SHIFTS_URL failed: {exc}")
+        snapshot(page, "04_shifts_page")
         browser.close()
-    log("Saved discover_screenshot.png and discover_page.html.")
     log(
-        "Open the screenshot, find how an available shift is visually marked "
-        "(e.g. an open-padlock icon), then inspect discover_page.html to find "
-        "the matching CSS class, and update SELECTORS at the top of this file."
+        "Discovery finished. Download the artifact and look through the "
+        "discover_01/03/04 .png files to see how far it got, and the "
+        "matching .html files for the real element structure."
     )
 
 
