@@ -2,41 +2,38 @@
 """
 smeny.cz shift watcher
 =======================
-Logs into your smeny.cz employee account, checks the shifts page for
-newly-available ("unlocked") shifts, and sends you a WhatsApp message
-via CallMeBot whenever a new one shows up.
+Logs into your smeny.cz employee account, checks for newly-available
+("unlocked") shifts using smeny.cz's own internal JSON API, and sends
+you a WhatsApp message via CallMeBot whenever a new one shows up.
 
-TWO MODES
+No browser automation needed -- this uses plain HTTP requests against
+the same endpoints the smeny.cz website itself calls:
+  1. GET  /home                       -> grab the login CSRF token
+  2. POST /login_check                -> log in, get a session cookie
+  3. GET  /calendar                   -> read the numeric user ID
+  4. GET  /shift/user-list/<user_id>  -> the actual shift data (JSON),
+                                          each shift has an "unlocked"
+                                          boolean flag
+
+RUN MODES
 ---------
-1. Discovery mode (run this first, once):
-     python watch_shifts.py --discover
-   Logs in, saves a screenshot (discover_screenshot.png) and the page
-   HTML (discover_page.html) to disk so you can confirm/adjust the CSS
-   selectors below. Nothing is sent on WhatsApp in this mode.
-
-2. Normal mode (what runs on a schedule):
-     python watch_shifts.py
-   Logs in, reads current available shifts, compares them to the last
-   known state (state.json), and WhatsApps you about anything new.
-
-CONFIGURATION
---------------
-All secrets/config come from environment variables (see .env.example).
-The CSS selectors in the SELECTORS block below are my best guess based
-on smeny.cz's public documentation/screenshots -- I have not been able
-to log into your actual account, so you WILL likely need to adjust
-them once using discovery mode. Look for "ADJUST ME" comments.
+  python watch_shifts.py            Normal check (compares to state.json,
+                                     sends WhatsApp for anything new).
+  python watch_shifts.py --discover Prints out what it found without
+                                     sending WhatsApp or saving state --
+                                     useful for a dry run / debugging.
 """
 
 import json
 import os
+import re
 import sys
-import time
 import urllib.parse
 import urllib.request
+from datetime import date, timedelta
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+import requests
 
 # ---------------------------------------------------------------------------
 # Configuration (from environment variables)
@@ -45,10 +42,8 @@ from playwright.sync_api import sync_playwright
 SMENY_EMAIL = os.environ.get("SMENY_EMAIL")
 SMENY_PASSWORD = os.environ.get("SMENY_PASSWORD")
 
-# The page that lists your shifts / shift exchange once logged in.
-# Log in manually in a normal browser first, click through to the
-# "Směny" / shift-exchange tab, and copy the exact URL here.
-SHIFTS_URL = os.environ.get("SHIFTS_URL", "https://smeny.cz/app/shifts")
+# How many days ahead to check for available shifts.
+LOOKAHEAD_DAYS = int(os.environ.get("LOOKAHEAD_DAYS", "60"))
 
 # CallMeBot: message "I allow callmebot to send me messages" to the
 # CallMeBot WhatsApp number, it replies with your personal API key.
@@ -57,27 +52,20 @@ CALLMEBOT_APIKEY = os.environ.get("CALLMEBOT_APIKEY")
 
 STATE_FILE = Path(os.environ.get("STATE_FILE", "state.json"))
 
-# ---------------------------------------------------------------------------
-# Selectors -- ADJUST ME after running --discover
-# ---------------------------------------------------------------------------
+BASE_URL = "https://smeny.cz"
+LOGIN_PAGE_URL = f"{BASE_URL}/home"
+LOGIN_POST_URL = f"{BASE_URL}/login_check"
+CALENDAR_URL = f"{BASE_URL}/calendar"
 
-SELECTORS = {
-    # Login form fields on https://smeny.cz/home
-    # (confirmed from real page: <form action="/login_check">, fields
-    # named _username / _password)
-    "login_email": 'input[name="_username"]',
-    "login_password": 'input[name="_password"]',
-    "login_submit": 'button[type="submit"]',
-    # A logged-in-only element used to confirm login succeeded.
-    "logged_in_marker": '[class*="dashboard"], [class*="calendar"]',
-    # Each row/card representing one shift on the shifts page.
-    "shift_card": '[class*="shift"]',
-    # Within a shift card: the element that marks it as "unlocked"/
-    # available to claim (per smeny.cz's FAQ this is a padlock icon).
-    "unlocked_marker": '[class*="unlock"], [class*="lock-open"]',
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
 }
 
-LOGIN_URL = "https://smeny.cz/home"
+CSRF_RE = re.compile(r'name="_csrf_token"\s+value="([^"]+)"')
+USER_ID_RE = re.compile(r"var\s+user\s*=\s*\{\s*id:\s*'(\d+)'")
 
 
 def log(msg: str) -> None:
@@ -103,7 +91,7 @@ def send_whatsapp(text: str) -> None:
         "text": text,
         "apikey": CALLMEBOT_APIKEY,
     }
-    url = "https://api.callmebot.com/whatsapp.php?" + urllib.parse.urlencode(params)
+    url = f"https://api.callmebot.com/whatsapp.php?" + urllib.parse.urlencode(params)
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
@@ -127,161 +115,111 @@ def save_state(shift_ids: set[str]) -> None:
     )
 
 
-def snapshot(page, name: str) -> None:
-    """Save a screenshot + HTML dump of the current page state for debugging."""
+def login() -> requests.Session:
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    log(f"Fetching login page: {LOGIN_PAGE_URL}")
+    resp = session.get(LOGIN_PAGE_URL, timeout=30)
+    resp.raise_for_status()
+
+    match = CSRF_RE.search(resp.text)
+    if not match:
+        log("ERROR: could not find _csrf_token on the login page. The login "
+            "form may have changed -- inspect the page HTML manually.")
+        sys.exit(1)
+    csrf_token = match.group(1)
+
+    log("Submitting login form")
+    resp = session.post(
+        LOGIN_POST_URL,
+        data={
+            "_username": SMENY_EMAIL,
+            "_password": SMENY_PASSWORD,
+            "_csrf_token": csrf_token,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+
+    if "_username" in resp.text and "_password" in resp.text and "login-form" in resp.text:
+        log("ERROR: login appears to have failed (still seeing the login "
+            "form after submitting). Double-check SMENY_EMAIL / "
+            "SMENY_PASSWORD secrets.")
+        sys.exit(1)
+
+    log("Login looks successful.")
+    return session
+
+
+def get_user_id(session: requests.Session) -> str:
+    log(f"Fetching {CALENDAR_URL} to read the user ID")
+    resp = session.get(CALENDAR_URL, timeout=30)
+    resp.raise_for_status()
+
+    match = USER_ID_RE.search(resp.text)
+    if not match:
+        log("ERROR: could not find the user ID on the calendar page. "
+            "smeny.cz may have changed how it embeds this -- inspect "
+            "the page HTML manually (look for 'var user = { id:').")
+        sys.exit(1)
+
+    user_id = match.group(1)
+    log(f"Found user ID: {user_id}")
+    return user_id
+
+
+def fetch_shifts(session: requests.Session, user_id: str) -> list[dict]:
+    start = date.today() - timedelta(days=1)
+    end = date.today() + timedelta(days=LOOKAHEAD_DAYS)
+    url = f"{BASE_URL}/shift/user-list/{user_id}"
+    params = {"start": start.isoformat(), "end": end.isoformat()}
+
+    log(f"Fetching shifts from {start} to {end}")
+    resp = session.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+
     try:
-        page.screenshot(path=f"discover_{name}.png", full_page=True)
-        Path(f"discover_{name}.html").write_text(page.content(), encoding="utf-8")
-        log(f"Saved discover_{name}.png / discover_{name}.html")
-    except Exception as exc:  # noqa: BLE001
-        log(f"WARNING: could not save snapshot '{name}': {exc}")
+        shifts = resp.json()
+    except ValueError:
+        log("ERROR: shift list response was not valid JSON. smeny.cz may "
+            "have changed this endpoint -- inspect the raw response.")
+        sys.exit(1)
+
+    log(f"Fetched {len(shifts)} shift entries in total.")
+    return shifts
 
 
-def login(page, debug: bool = False) -> None:
-    log(f"Navigating to {LOGIN_URL}")
-    page.goto(LOGIN_URL, wait_until="networkidle")
-
-    if debug:
-        snapshot(page, "01_login_page")
-
-    try:
-        page.fill(SELECTORS["login_email"], SMENY_EMAIL, timeout=10000)
-        page.fill(SELECTORS["login_password"], SMENY_PASSWORD, timeout=10000)
-        page.click(SELECTORS["login_submit"], timeout=10000)
-    except Exception as exc:  # noqa: BLE001
-        log(f"ERROR: could not find/fill the login form fields: {exc}")
-        if debug:
-            snapshot(page, "02_login_form_error")
-            log(
-                "Login form selectors are wrong for this site. Open "
-                "discover_01_login_page.html, find the actual email/password "
-                "input fields and the submit button, and update "
-                "SELECTORS['login_email'], SELECTORS['login_password'], and "
-                "SELECTORS['login_submit'] at the top of this file."
-            )
-            sys.exit(0)
-        raise
-
-    # Give the SPA time to redirect/render the dashboard.
-    page.wait_for_load_state("networkidle")
-
-    if debug:
-        snapshot(page, "03_after_login_submit")
-
-    try:
-        page.wait_for_selector(SELECTORS["logged_in_marker"], timeout=15000)
-        log("Login looks successful.")
-    except Exception:  # noqa: BLE001
-        log(
-            "WARNING: could not confirm login succeeded (logged_in_marker not "
-            "found). This may be fine -- check discover_03_after_login_submit.png "
-            "to see if you're actually logged in; if so, just update "
-            "SELECTORS['logged_in_marker'] to match something real on that page."
-        )
+def describe_shift(shift: dict) -> str:
+    title = shift.get("title", "Neznáma smena")
+    start = shift.get("start", "?")
+    end = shift.get("end", "?")
+    return f"{title}\n{start} – {end}"
 
 
-def collect_available_shifts(page) -> dict[str, str]:
-    """
-    Returns a dict of {shift_id: human_readable_description} for every
-    shift currently marked as available/unlocked.
-
-    shift_id is a stable-ish string derived from the card's text content,
-    used only to detect "is this shift new". It doesn't need to be a real
-    database ID.
-    """
-    log(f"Navigating to {SHIFTS_URL}")
-    page.goto(SHIFTS_URL, wait_until="networkidle")
-
-    cards = page.query_selector_all(SELECTORS["shift_card"])
-    log(f"Found {len(cards)} shift card(s) on the page.")
-
-    available: dict[str, str] = {}
-    for card in cards:
-        unlocked = card.query_selector(SELECTORS["unlocked_marker"])
-        if not unlocked:
-            continue
-        text = (card.inner_text() or "").strip()
-        if not text:
-            continue
-        # Collapse whitespace, use as both ID and description.
-        flat = " ".join(text.split())
-        available[flat] = flat
-
-    log(f"Of which {len(available)} appear unlocked/available.")
-    return available
-
-
-def run_discover() -> None:
+def run(discover: bool = False) -> None:
     require_env("SMENY_EMAIL", "SMENY_PASSWORD")
 
-    captured: list[dict] = []
+    session = login()
+    user_id = get_user_id(session)
+    shifts = fetch_shifts(session, user_id)
 
-    def handle_response(response) -> None:
-        try:
-            ct = response.headers.get("content-type", "")
-            if "application/json" not in ct:
-                return
-            body = response.text()
-            captured.append(
-                {
-                    "url": response.url,
-                    "status": response.status,
-                    "body": body[:20000],  # cap size per response
-                }
-            )
-        except Exception:  # noqa: BLE001
-            pass
+    available = {str(s["id"]): describe_shift(s) for s in shifts if s.get("unlocked")}
+    log(f"Of which {len(available)} are currently unlocked/available.")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.on("response", handle_response)
-
-        login(page, debug=True)
-        try:
-            page.goto(SHIFTS_URL, wait_until="networkidle")
-        except Exception as exc:  # noqa: BLE001
-            log(f"WARNING: navigating to SHIFTS_URL failed: {exc}")
-        snapshot(page, "04_shifts_page")
-
-        # Click "next month" a couple of times -- this triggers fresh AJAX
-        # calls for new date ranges, which helps us see the event JSON shape
-        # even if the current month has nothing available.
-        for i in range(2):
-            try:
-                page.click(".fc-next-button", timeout=5000)
-                page.wait_for_load_state("networkidle")
-            except Exception as exc:  # noqa: BLE001
-                log(f"Could not click next-month button (attempt {i+1}): {exc}")
-                break
-
-        browser.close()
-
-    Path("discover_05_network_calls.json").write_text(
-        json.dumps(captured, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    log(f"Captured {len(captured)} JSON network response(s) -> discover_05_network_calls.json")
-    log(
-        "Discovery finished. Download the artifact and look through the "
-        "discover_01/03/04 .png files to see how far it got, the matching "
-        ".html files for the real element structure, and "
-        "discover_05_network_calls.json for the raw API data (look for a "
-        "field indicating whether a shift is open/locked)."
-    )
-
-
-def run_check() -> None:
-    require_env("SMENY_EMAIL", "SMENY_PASSWORD")
+    if discover:
+        if available:
+            log("Available shifts found:")
+            for shift_id, desc in available.items():
+                log(f"  [{shift_id}] {desc}")
+        else:
+            log("No available shifts right now. Re-run this periodically, "
+                "or once you know a shift is open, to confirm the "
+                "'unlocked' field behaves as expected.")
+        return
 
     previous = load_previous_state()
     log(f"Loaded {len(previous)} previously-seen available shift(s) from state.")
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        login(page)
-        available = collect_available_shifts(page)
-        browser.close()
 
     current_ids = set(available.keys())
     new_ids = current_ids - previous
@@ -289,10 +227,9 @@ def run_check() -> None:
     if new_ids:
         log(f"{len(new_ids)} new shift(s) found!")
         lines = [available[i] for i in new_ids]
-        message = "🟢 Nová volná směna na smeny.cz:\n\n" + "\n\n".join(lines)
-        # WhatsApp/CallMeBot messages have a practical length limit.
+        message = "🟢 Nová volná smena na smeny.cz:\n\n" + "\n\n".join(lines)
         if len(message) > 1500:
-            message = message[:1500] + "\n... (zkráceno)"
+            message = message[:1500] + "\n... (skrátené)"
         send_whatsapp(message)
     else:
         log("No new shifts since last check.")
@@ -301,7 +238,4 @@ def run_check() -> None:
 
 
 if __name__ == "__main__":
-    if "--discover" in sys.argv:
-        run_discover()
-    else:
-        run_check()
+    run(discover="--discover" in sys.argv)
