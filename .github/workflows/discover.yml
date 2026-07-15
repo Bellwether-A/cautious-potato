@@ -20,4 +20,5 @@ jobs:
         env:
           SMENY_EMAIL: ${{ secrets.SMENY_EMAIL }}
           SMENY_PASSWORD: ${{ secrets.SMENY_PASSWORD }}
+          SHOW_DETAILS_IN_LOGS: "false"
         run: python watch_shifts.py --discover
