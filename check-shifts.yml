@@ -3,7 +3,7 @@ name: Check smeny.cz shifts
 on:
   schedule:
     # Every 10 minutes. GitHub may delay this slightly under load.
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {} # lets you trigger it manually from the Actions tab
 
 permissions:
@@ -20,15 +20,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          playwright install --with-deps chromium
+        run: pip install -r requirements.txt
 
       - name: Run shift check
         env:
           SMENY_EMAIL: ${{ secrets.SMENY_EMAIL }}
           SMENY_PASSWORD: ${{ secrets.SMENY_PASSWORD }}
-          SHIFTS_URL: ${{ secrets.SHIFTS_URL }}
           CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
         run: python watch_shifts.py
