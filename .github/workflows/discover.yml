@@ -1,4 +1,4 @@
-name: Discover shift page (run once for setup)
+name: Discover shift page (test run, no WhatsApp sent)
 
 on:
   workflow_dispatch: {} # only runs when you click "Run workflow" manually
@@ -14,21 +14,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          playwright install --with-deps chromium
+        run: pip install -r requirements.txt
 
-      - name: Run discovery
+      - name: Run discovery (dry run -- no WhatsApp, no state saved)
         env:
           SMENY_EMAIL: ${{ secrets.SMENY_EMAIL }}
           SMENY_PASSWORD: ${{ secrets.SMENY_PASSWORD }}
-          SHIFTS_URL: ${{ secrets.SHIFTS_URL }}
         run: python watch_shifts.py --discover
-
-      - name: Upload results
-        uses: actions/upload-artifact@v4
-        with:
-          name: discovery-results
-          path: discover_*
-          if-no-files-found: warn
-          retention-days: 3
