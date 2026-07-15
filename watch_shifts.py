@@ -17,11 +17,18 @@ the same endpoints the smeny.cz website itself calls:
 
 RUN MODES
 ---------
-  python watch_shifts.py            Normal check (compares to state.json,
-                                     sends WhatsApp for anything new).
-  python watch_shifts.py --discover Prints out what it found without
-                                     sending WhatsApp or saving state --
-                                     useful for a dry run / debugging.
+  python watch_shifts.py               Normal check (compares to state.json,
+                                        sends WhatsApp for anything new).
+  python watch_shifts.py --discover    Prints out what it found without
+                                        sending WhatsApp or saving state --
+                                        useful for a dry run / debugging.
+  python watch_shifts.py --test-whatsapp
+                                        Sends a canned test WhatsApp message
+                                        via CallMeBot only -- does NOT log
+                                        into smeny.cz at all. Use this to
+                                        confirm CALLMEBOT_PHONE/APIKEY work
+                                        on their own, independent of
+                                        anything smeny.cz-related.
 """
 
 import json
@@ -279,5 +286,27 @@ def run(discover: bool = False) -> None:
     save_state(current_ids)
 
 
+def test_whatsapp() -> None:
+    """Send a canned message to confirm CallMeBot config works, without
+    touching smeny.cz at all."""
+    if not CALLMEBOT_PHONE or not CALLMEBOT_APIKEY:
+        log("ERROR: CALLMEBOT_PHONE and/or CALLMEBOT_APIKEY are not set. "
+            "Add them as repo secrets (or in your local .env) before testing.")
+        sys.exit(1)
+
+    log(f"Sending a test WhatsApp message via CallMeBot...")
+    send_whatsapp(
+        "✅ Test message from your smeny.cz shift watcher. "
+        "If you got this, CallMeBot is working correctly."
+    )
+    log("Done. Check your WhatsApp -- if nothing arrived within a minute or "
+        "two, double check CALLMEBOT_PHONE (needs the country code, e.g. "
+        "+421...) and CALLMEBOT_APIKEY, and that you completed the "
+        "'I allow callmebot to send me messages' step.")
+
+
 if __name__ == "__main__":
-    run(discover="--discover" in sys.argv)
+    if "--test-whatsapp" in sys.argv:
+        test_whatsapp()
+    else:
+        run(discover="--discover" in sys.argv)
