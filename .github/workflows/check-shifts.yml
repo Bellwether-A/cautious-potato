@@ -1,9 +1,6 @@
 name: Check smeny.cz shifts
 
 on:
-  schedule:
-    # Every 10 minutes. GitHub may delay this slightly under load.
-    - cron: "*/10 * * * *"
   workflow_dispatch: {} # lets you trigger it manually from the Actions tab
 
 permissions:
