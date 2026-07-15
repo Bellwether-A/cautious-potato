@@ -52,6 +52,13 @@ CALLMEBOT_APIKEY = os.environ.get("CALLMEBOT_APIKEY")
 
 STATE_FILE = Path(os.environ.get("STATE_FILE", "state.json"))
 
+# When this repo is public, GitHub Actions logs are visible to anyone.
+# By default we keep the console output generic (counts only) and only
+# put actual shift details (title, date, time) into the private WhatsApp
+# message. Set SHOW_DETAILS_IN_LOGS=true as a repo secret/env var if you
+# ever want full detail in the logs too (e.g. while the repo is private).
+SHOW_DETAILS_IN_LOGS = os.environ.get("SHOW_DETAILS_IN_LOGS", "false").lower() == "true"
+
 BASE_URL = "https://smeny.cz"
 LOGIN_PAGE_URL = f"{BASE_URL}/home"
 LOGIN_POST_URL = f"{BASE_URL}/login_check"
@@ -95,9 +102,12 @@ def send_whatsapp(text: str) -> None:
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
-            log(f"CallMeBot response: {body[:200]}")
+            if SHOW_DETAILS_IN_LOGS:
+                log(f"CallMeBot response: {body[:200]}")
+            else:
+                log(f"CallMeBot response received (status {resp.status}).")
     except Exception as exc:  # noqa: BLE001
-        log(f"ERROR sending WhatsApp message: {exc}")
+        log(f"ERROR sending WhatsApp message.")
 
 
 def load_previous_state() -> set[str]:
@@ -165,7 +175,10 @@ def get_user_id(session: requests.Session) -> str:
         sys.exit(1)
 
     user_id = match.group(1)
-    log(f"Found user ID: {user_id}")
+    if SHOW_DETAILS_IN_LOGS:
+        log(f"Found user ID: {user_id}")
+    else:
+        log("Found user ID (hidden -- set SHOW_DETAILS_IN_LOGS=true to show).")
     return user_id
 
 
@@ -231,9 +244,16 @@ def run(discover: bool = False) -> None:
 
     if discover:
         if available:
-            log("Available shifts found:")
-            for shift_id, desc in available.items():
-                log(f"  [{shift_id}] {desc}")
+            if SHOW_DETAILS_IN_LOGS:
+                log("Available shifts found:")
+                for shift_id, desc in available.items():
+                    log(f"  [{shift_id}] {desc}")
+            else:
+                log(
+                    f"{len(available)} available shift(s) found -- details hidden "
+                    "from logs. Set SHOW_DETAILS_IN_LOGS=true to show them here, "
+                    "or send yourself a test WhatsApp via normal (non-discover) mode."
+                )
         else:
             log("No available shifts right now. Re-run this periodically, "
                 "or once you know a shift is open, to confirm the "
