@@ -213,20 +213,60 @@ def collect_available_shifts(page) -> dict[str, str]:
 
 def run_discover() -> None:
     require_env("SMENY_EMAIL", "SMENY_PASSWORD")
+
+    captured: list[dict] = []
+
+    def handle_response(response) -> None:
+        try:
+            ct = response.headers.get("content-type", "")
+            if "application/json" not in ct:
+                return
+            body = response.text()
+            captured.append(
+                {
+                    "url": response.url,
+                    "status": response.status,
+                    "body": body[:20000],  # cap size per response
+                }
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        page.on("response", handle_response)
+
         login(page, debug=True)
         try:
             page.goto(SHIFTS_URL, wait_until="networkidle")
         except Exception as exc:  # noqa: BLE001
             log(f"WARNING: navigating to SHIFTS_URL failed: {exc}")
         snapshot(page, "04_shifts_page")
+
+        # Click "next month" a couple of times -- this triggers fresh AJAX
+        # calls for new date ranges, which helps us see the event JSON shape
+        # even if the current month has nothing available.
+        for i in range(2):
+            try:
+                page.click(".fc-next-button", timeout=5000)
+                page.wait_for_load_state("networkidle")
+            except Exception as exc:  # noqa: BLE001
+                log(f"Could not click next-month button (attempt {i+1}): {exc}")
+                break
+
         browser.close()
+
+    Path("discover_05_network_calls.json").write_text(
+        json.dumps(captured, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    log(f"Captured {len(captured)} JSON network response(s) -> discover_05_network_calls.json")
     log(
         "Discovery finished. Download the artifact and look through the "
-        "discover_01/03/04 .png files to see how far it got, and the "
-        "matching .html files for the real element structure."
+        "discover_01/03/04 .png files to see how far it got, the matching "
+        ".html files for the real element structure, and "
+        "discover_05_network_calls.json for the raw API data (look for a "
+        "field indicating whether a shift is open/locked)."
     )
 
 
