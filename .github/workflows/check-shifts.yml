@@ -3,7 +3,7 @@ name: Check smeny.cz shifts
 on:
   schedule:
     # Every 10 minutes. GitHub may delay this slightly under load.
-    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch: {} # lets you trigger it manually from the Actions tab
 
 permissions:
@@ -28,6 +28,7 @@ jobs:
           SMENY_PASSWORD: ${{ secrets.SMENY_PASSWORD }}
           CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          SHOW_DETAILS_IN_LOGS: "false"
         run: python watch_shifts.py
 
       - name: Commit updated state
