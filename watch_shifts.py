@@ -30,7 +30,7 @@ import re
 import sys
 import urllib.parse
 import urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -190,11 +190,33 @@ def fetch_shifts(session: requests.Session, user_id: str) -> list[dict]:
     return shifts
 
 
+WEEKDAY_NAMES_SK = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"]
+
+
+def format_datetime(raw: str) -> tuple[str, str]:
+    """Turn '2026-07-16 14:00' into ('Št 16.7.2026', '14:00')."""
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return raw, ""
+    weekday = WEEKDAY_NAMES_SK[dt.weekday()]
+    return f"{weekday} {dt.day}.{dt.month}.{dt.year}", dt.strftime("%H:%M")
+
+
 def describe_shift(shift: dict) -> str:
     title = shift.get("title", "Neznáma smena")
-    start = shift.get("start", "?")
-    end = shift.get("end", "?")
-    return f"{title}\n{start} – {end}"
+    start_raw = shift.get("start", "?")
+    end_raw = shift.get("end", "?")
+
+    start_date, start_time = format_datetime(start_raw)
+    end_date, end_time = format_datetime(end_raw)
+
+    if start_date == end_date:
+        when = f"{start_date}, {start_time} – {end_time}"
+    else:
+        when = f"{start_date} {start_time} – {end_date} {end_time}"
+
+    return f"{title}\n{when}"
 
 
 def run(discover: bool = False) -> None:
