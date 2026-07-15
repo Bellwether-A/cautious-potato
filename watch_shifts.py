@@ -63,8 +63,10 @@ STATE_FILE = Path(os.environ.get("STATE_FILE", "state.json"))
 
 SELECTORS = {
     # Login form fields on https://smeny.cz/home
-    "login_email": 'input[type="email"], input[name="email"]',
-    "login_password": 'input[type="password"], input[name="password"]',
+    # (confirmed from real page: <form action="/login_check">, fields
+    # named _username / _password)
+    "login_email": 'input[name="_username"]',
+    "login_password": 'input[name="_password"]',
     "login_submit": 'button[type="submit"]',
     # A logged-in-only element used to confirm login succeeded.
     "logged_in_marker": '[class*="dashboard"], [class*="calendar"]',
