@@ -1,7 +1,7 @@
 # smeny.cz shift watcher → WhatsApp
 
 Checks your smeny.cz account every 10 minutes for newly-available shifts
-(the ones you can pick up, shown with an unlocked-padlock indicator / a
+(the ones you can pickup, shown with an unlocked-padlock indicator / a
 green calendar date in the app) and WhatsApps you when one shows up.
 Runs for free on GitHub Actions, so your own computer doesn't need to be on.
 
