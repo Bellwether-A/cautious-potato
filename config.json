@@ -10,7 +10,8 @@
           "end": "22:00"
         }
       },
-      "min_duration_hours": 8
+      "min_duration_hours": 8,
+      "max_duration_hours": 8
     }
   ]
 }
