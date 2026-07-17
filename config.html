@@ -712,7 +712,7 @@ let rules = [ defaultRule() ];
 
 function defaultRule() {
   const dayWindows = {};
-  for (let d = 0; d <= 6; d++) dayWindows[d] = { enabled: true, start: "", end: "" };
+  for (let d = 0; d <= 6; d++) dayWindows[d] = { enabled: false, start: "", end: "" };
   return {
     title_keywords: "",
     dayWindows,
