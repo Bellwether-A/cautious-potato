@@ -302,13 +302,16 @@ def shift_matches_rule(shift: dict, rule: dict) -> bool:
         wstart, wend = window.get("start"), window.get("end")
         if wstart and wend:
             if wstart <= wend:
-                if not (wstart <= start_hm <= wend):
+                if not (wstart <= start_hm < wend):
                     return False
             else:
                 # Overnight window (e.g. 22:00-06:00, like a night/"nočná"
                 # shift) -- matches if the shift starts at/after wstart
-                # OR at/before wend, since the window wraps past midnight.
-                if not (start_hm >= wstart or start_hm <= wend):
+                # OR strictly before wend, since the window wraps past
+                # midnight. End is exclusive so a shift starting exactly
+                # at wend (e.g. 06:00) belongs to the *next* window
+                # (e.g. "ranná" starting 06:00), not this one.
+                if not (start_hm >= wstart or start_hm < wend):
                     return False
         elif wstart:
             if start_hm < wstart:
@@ -426,7 +429,9 @@ def run(discover: bool = False) -> None:
 
     config = load_config()
     rules = config.get("rules", [])
-    log(f"Loaded {len(rules)} auto-pick rule(s) from {CONFIG_FILE}.")
+    max_shifts_per_day = config.get("max_shifts_per_day", 1)
+    log(f"Loaded {len(rules)} auto-pick rule(s) from {CONFIG_FILE} "
+        f"(max {max_shifts_per_day} auto-claimed shift(s)/day).")
 
     session = login()
     user_id = get_user_id(session)
@@ -475,6 +480,7 @@ def run(discover: bool = False) -> None:
 
     claim_results: dict[str, bool] = {}
     skipped_conflict_ids: set[str] = set()
+    skipped_daylimit_ids: set[str] = set()
 
     if new_ids:
         log(f"{len(new_ids)} new shift(s) found!")
@@ -482,12 +488,16 @@ def run(discover: bool = False) -> None:
         # Claim in priority order (best rule first, earliest start time as
         # tiebreak), skipping anything that overlaps a shift we already
         # claimed *this run* -- you can't work two overlapping shifts, so
-        # only the higher-priority one gets taken.
+        # only the higher-priority one gets taken. Also enforce
+        # max_shifts_per_day even for non-overlapping shifts on the same
+        # calendar day (e.g. a ranná + poobedná combo), since claiming both
+        # is technically possible but likely not what you want.
         to_consider = sorted(
             new_ids & matched_ids,
             key=lambda sid: (rule_index_by_shift[sid], shift_by_id[sid]["start"]),
         )
         claimed_shifts: list[dict] = []
+        claimed_count_by_date: dict[str, int] = {}
         for shift_id in to_consider:
             candidate = shift_by_id[shift_id]
             if any(shifts_overlap(candidate, c) for c in claimed_shifts):
@@ -495,15 +505,27 @@ def run(discover: bool = False) -> None:
                 log(f"Skipping shift {shift_id}: overlaps a higher-priority "
                     "shift already claimed this run.")
                 continue
+
+            candidate_date = candidate["start"].split(" ")[0]
+            if claimed_count_by_date.get(candidate_date, 0) >= max_shifts_per_day:
+                skipped_daylimit_ids.add(shift_id)
+                log(f"Skipping shift {shift_id}: already claimed "
+                    f"{max_shifts_per_day} shift(s) on {candidate_date} this run "
+                    "(max_shifts_per_day limit).")
+                continue
+
             success = claim_shift(session, user_id, candidate)
             claim_results[shift_id] = success
             if success:
                 claimed_shifts.append(candidate)
+                claimed_count_by_date[candidate_date] = claimed_count_by_date.get(candidate_date, 0) + 1
 
         lines = []
         for shift_id in new_ids:
             if shift_id in skipped_conflict_ids:
                 prefix = "⏭️ PRESKOČENÉ (prekrýva sa s vyššou prioritou): "
+            elif shift_id in skipped_daylimit_ids:
+                prefix = "⏭️ PRESKOČENÉ (dosiahnutý denný limit smien): "
             elif shift_id in claim_results:
                 prefix = (
                     "⭐ AUTOMATICKY PRIHLÁSENÉ: " if claim_results[shift_id]
