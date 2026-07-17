@@ -1,0 +1,1327 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shift auto-pick rules</title>
+<style>
+  :root {
+    --bg: #12161c;
+    --surface: #1b212b;
+    --surface-2: #212936;
+    --border: #2a323e;
+    --text: #eef1f5;
+    --text-dim: #9aa5b1;
+    --amber: #f2a93b;
+    --amber-dim: #7a5a24;
+    --green: #4caf7d;
+    --red: #e2665b;
+    --font-display: -apple-system, "Segoe UI", "Inter", ui-sans-serif, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    padding: 32px 20px 80px;
+    line-height: 1.5;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 32px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 0 8px;
+  }
+
+  h1 {
+    font-size: 28px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .sub {
+    color: var(--text-dim);
+    margin: 0;
+    max-width: 60ch;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+
+  .card + .card { margin-top: 20px; }
+
+  .card h2 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin: 0 0 16px;
+    font-weight: 600;
+  }
+
+  label.field {
+    display: block;
+    margin-bottom: 18px;
+  }
+
+  label.field:last-child { margin-bottom: 0; }
+
+  .field-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  input[type="text"], input[type="time"], input[type="number"] {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 9px 11px;
+    font-size: 14px;
+    font-family: var(--font-mono);
+  }
+
+  input:focus {
+    outline: 2px solid var(--amber);
+    outline-offset: 1px;
+  }
+
+  .hint {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 5px;
+  }
+
+  .typo-hint {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .typo-hint:empty { margin-top: 0; }
+  .typo-fix-btn {
+    background: none;
+    border: none;
+    color: var(--amber);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-display);
+    padding: 4px 2px;
+    font-weight: 600;
+  }
+  .typo-fix-btn:hover { color: #ffbf5c; }
+
+  .days {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .day-toggle {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .day-toggle.active {
+    background: var(--amber-dim);
+    border-color: var(--amber);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .rule-block {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .rule-block h3 {
+    font-size: 13px;
+    color: var(--amber);
+    margin: 0 0 14px;
+    font-family: var(--font-mono);
+    padding-right: 130px;
+  }
+
+  .remove-rule {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-mono);
+  }
+  .remove-rule:hover { color: var(--red); }
+
+  button.add-rule {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    padding: 12px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-mono);
+  }
+  button.add-rule:hover { color: var(--amber); border-color: var(--amber); }
+
+  /* Ticket preview -- the signature element */
+  .ticket {
+    background: var(--surface-2);
+    border-radius: 10px;
+    position: relative;
+    padding: 20px;
+    font-family: var(--font-mono);
+    overflow: hidden;
+  }
+
+  .ticket::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 96px;
+    border-top: 2px dashed var(--border);
+  }
+
+  .ticket .stub-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .ticket .stub-title {
+    font-size: 18px;
+    color: var(--text);
+    margin: 6px 0 14px;
+    font-weight: 600;
+  }
+
+  .ticket .stub-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding-top: 22px;
+  }
+
+  .ticket .stub-row span:last-child { color: var(--text); }
+
+  .status-line {
+    margin-top: 14px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .dot.no-match { background: var(--red); }
+
+  textarea#json-out {
+    width: 100%;
+    min-height: 180px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #7ee787;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 14px;
+    resize: vertical;
+    white-space: pre;
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  button.primary {
+    background: var(--amber);
+    color: #1a1206;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+
+  .steps {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 10px 0 0;
+    padding-left: 20px;
+  }
+  .steps li { margin-bottom: 6px; }
+  .steps code {
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    color: var(--amber);
+  }
+
+  .copied-msg {
+    font-size: 12px;
+    color: var(--green);
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .copied-msg.show { opacity: 1; }
+
+  input[type="password"] {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 9px 11px;
+    font-size: 14px;
+    font-family: var(--font-mono);
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 10px;
+  }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary:hover { color: var(--text); border-color: var(--text-dim); }
+
+  .banner {
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .banner.show { display: block; }
+  .banner.ok { background: #163a2b; border: 1px solid var(--green); color: #b6f0cf; }
+  .banner.err { background: #3a1e1c; border: 1px solid var(--red); color: #ffc7c0; }
+
+  .conn-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    font-family: var(--font-mono);
+  }
+  .conn-status.connected { color: var(--green); }
+
+  details.advanced {
+    margin-top: 6px;
+  }
+  details.advanced summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+    user-select: none;
+  }
+  details.advanced summary:hover { color: var(--amber); }
+
+  .day-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .day-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .day-row .day-toggle {
+    width: 38px;
+    text-align: center;
+    flex-shrink: 0;
+    padding: 6px 0;
+  }
+  .day-row input[type="time"] {
+    width: 100px;
+    flex-shrink: 0;
+  }
+  .day-row input[type="time"]:disabled {
+    opacity: 0.45;
+  }
+  .day-sep {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  button.mini-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 13px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 6px 0;
+    margin-top: 4px;
+  }
+  button.mini-btn:hover { color: var(--amber); }
+
+  .preset-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .preset-label {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .preset-btn {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 13px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .preset-btn:hover {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .priority-tag {
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: 11px;
+    text-transform: none;
+  }
+
+  .rule-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 4px;
+  }
+  .rule-controls button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    font-family: var(--font-mono);
+    padding: 8px 10px;
+    min-height: 36px;
+    border-radius: 5px;
+  }
+  .rule-controls button:hover { color: var(--amber); background: var(--surface-2); }
+  .rule-controls button.remove-rule:hover { color: var(--red); }
+
+  .empty-hint {
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 16px 0;
+  }
+
+  .rule-summary-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber-dim);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+  .rule-summary-card:last-child { margin-bottom: 0; }
+
+  .rule-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .priority-badge {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #1a1206;
+    background: var(--amber);
+    border-radius: 5px;
+    padding: 4px 10px;
+    flex-shrink: 0;
+  }
+
+  .keyword-pill, .duration-pill {
+    font-family: var(--font-display);
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--surface);
+  }
+  .keyword-pill.any {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--text-dim);
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--text-dim);
+  }
+  .duration-pill {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    font-weight: 600;
+  }
+
+  .rule-summary-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .rule-summary-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .day-pill {
+    font-family: var(--font-display);
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 5px 13px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .day-pill.any {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--text-dim);
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--text-dim);
+  }
+  .day-pill .day-name {
+    color: #1a1206;
+    background: var(--amber);
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">smeny.cz shift watcher</p>
+    <h1>Auto-pick rules</h1>
+    <p class="sub">
+      Set the shifts you want picked up automatically. A shift matches if it
+      satisfies <em>all</em> the conditions in at least one rule below. Leave
+      a field empty to ignore that condition.
+    </p>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div id="rules-container"></div>
+      <div class="actions">
+        <button class="add-rule" id="add-rule" style="flex:1">+ Add another rule</button>
+        <button class="secondary" id="clear-all-btn">Clear all</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Live preview</h2>
+        <div class="ticket">
+          <div class="stub-label">Example shift</div>
+          <div class="stub-title" id="preview-title">Nitra VAS</div>
+          <div class="stub-row">
+            <span id="preview-day">Št</span>
+            <span id="preview-time">14:00 – 22:00</span>
+          </div>
+        </div>
+        <div class="status-line">
+          <span class="dot" id="preview-dot"></span>
+          <span id="preview-status">Matches rule 1</span>
+        </div>
+        <p class="hint">
+          This is just a made-up example shift to sanity-check your rules
+          against as you type — it's not a real shift from your account.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Save to GitHub</h2>
+        <p class="hint" style="margin-top:-8px; margin-bottom: 16px;">
+          Optional: connect once so "Save to GitHub" commits <code>config.json</code>
+          for you, instead of copy-pasting it in yourself.
+        </p>
+        <label class="field">
+          <span class="field-label">GitHub username</span>
+          <input type="text" id="gh-owner" placeholder="e.g. your-username">
+        </label>
+        <label class="field">
+          <span class="field-label">Repository name</span>
+          <input type="text" id="gh-repo" placeholder="e.g. smeny-watcher">
+        </label>
+        <label class="field">
+          <span class="field-label">Personal access token</span>
+          <input type="password" id="gh-token" placeholder="ghp_...">
+          <div class="hint">
+            Create one at
+            <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color:var(--amber)">github.com/settings/tokens</a>
+            (fine-grained), scoped to <em>only this repository</em>, with
+            <strong>Contents: Read and write</strong> permission — nothing broader.
+            It's stored only in this browser (never sent anywhere except
+            directly to GitHub), but treat it like a password.
+          </div>
+        </label>
+        <div class="checkbox-row">
+          <input type="checkbox" id="gh-remember">
+          <label for="gh-remember">Remember on this device</label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="save-github-btn">Save to GitHub</button>
+          <button class="secondary" id="reload-btn">Reload from GitHub</button>
+          <button class="secondary" id="forget-btn">Forget saved connection</button>
+        </div>
+        <div class="conn-status" id="conn-status"></div>
+        <div class="banner" id="save-banner"></div>
+      </div>
+
+      <div class="card">
+        <h2>Your active rules, in plain terms</h2>
+        <div id="rule-summary"></div>
+      </div>
+
+      <div class="card">
+        <h2>Config JSON</h2>
+        <textarea id="json-out" readonly></textarea>
+        <div class="actions">
+          <button class="primary" id="copy-btn">Copy JSON</button>
+          <span class="copied-msg" id="copied-msg">Copied!</span>
+        </div>
+        <ol class="steps">
+          <li>Copy the JSON above.</li>
+          <li>In your GitHub repo, open <code>config.json</code> and click the pencil (edit) icon.</li>
+          <li>Select all the existing text, delete it, and paste this in.</li>
+          <li>Commit changes. The next check will use your new rules.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_LABELS = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"];
+
+// Standard shift-time presets seen on this account (matches how smeny.cz
+// itself labels shifts, e.g. "Ranná (06:00-14:00)"). "Nočná" wraps past
+// midnight -- the matching logic below handles that correctly.
+const PRESET_TIMES = {
+  ranna: { start: "06:00", end: "14:00" },
+  poobedna: { start: "14:00", end: "22:00" },
+  nocna: { start: "22:00", end: "06:00" },
+};
+let rules = [ defaultRule() ];
+
+function defaultRule() {
+  const dayWindows = {};
+  for (let d = 0; d <= 6; d++) dayWindows[d] = { enabled: true, start: "", end: "" };
+  return {
+    title_keywords: "",
+    dayWindows,
+    min_duration_hours: "",
+    max_duration_hours: "",
+  };
+}
+
+// Converts a rule as saved in config.json (either the new day_windows
+// schema, or the older flat days_of_week + one time window schema) into
+// our internal per-day editable shape.
+function jsonRuleToInternal(jsonRule) {
+  const dayWindows = {};
+  for (let d = 0; d <= 6; d++) dayWindows[d] = { enabled: false, start: "", end: "" };
+
+  if (jsonRule.day_windows) {
+    Object.entries(jsonRule.day_windows).forEach(([d, w]) => {
+      dayWindows[d] = { enabled: true, start: w.start || "", end: w.end || "" };
+    });
+  } else if (jsonRule.days_of_week) {
+    jsonRule.days_of_week.forEach(d => {
+      dayWindows[d] = {
+        enabled: true,
+        start: jsonRule.earliest_start_time || "",
+        end: jsonRule.latest_start_time || "",
+      };
+    });
+  } else {
+    // No day restriction saved at all -- every day enabled, unrestricted.
+    for (let d = 0; d <= 6; d++) {
+      dayWindows[d] = {
+        enabled: true,
+        start: jsonRule.earliest_start_time || "",
+        end: jsonRule.latest_start_time || "",
+      };
+    }
+  }
+
+  return {
+    title_keywords: (jsonRule.title_keywords || []).join(", "),
+    dayWindows,
+    min_duration_hours: jsonRule.min_duration_hours !== undefined ? String(jsonRule.min_duration_hours) : "",
+    max_duration_hours: jsonRule.max_duration_hours !== undefined ? String(jsonRule.max_duration_hours) : "",
+  };
+}
+
+const container = document.getElementById("rules-container");
+
+function render() {
+  container.innerHTML = "";
+
+  if (rules.length === 0) {
+    container.innerHTML = `<div class="empty-hint">No rules yet -- nothing will be auto-picked. Click "+ Add another rule" to start.</div>`;
+    update();
+    return;
+  }
+
+  rules.forEach((rule, i) => {
+    const block = document.createElement("div");
+    block.className = "rule-block";
+    block.innerHTML = `
+      <h3>Rule ${i + 1} <span class="priority-tag">(priority ${i + 1}${i === 0 ? " -- highest" : ""})</span></h3>
+      <div class="rule-controls">
+        ${i > 0 ? `<button class="reorder-btn" data-i="${i}" data-dir="-1" title="Higher priority">↑</button>` : ""}
+        ${i < rules.length - 1 ? `<button class="reorder-btn" data-i="${i}" data-dir="1" title="Lower priority">↓</button>` : ""}
+        ${rules.length > 0 ? `<button class="remove-rule" data-i="${i}">remove</button>` : ""}
+      </div>
+      <label class="field">
+        <span class="field-label">Shift title contains (comma-separated, any match counts)</span>
+        <input type="text" class="f-title" data-i="${i}" placeholder="e.g. VAS, P&C" value="${rule.title_keywords}">
+        <div class="hint">Leave empty to match any shift title.</div>
+        <div class="typo-hint" id="typo-hint-${i}"></div>
+      </label>
+      <label class="field">
+        <span class="field-label">Days &amp; start-time windows</span>
+        <div class="day-rows">
+          ${DAY_LABELS.map((label, d) => {
+            const dw = rule.dayWindows[d];
+            return `
+            <div class="day-row">
+              <div class="day-toggle ${dw.enabled ? "active" : ""}" data-i="${i}" data-day="${d}">${label}</div>
+              <input type="time" class="f-day-start" data-i="${i}" data-day="${d}" value="${dw.start}" ${dw.enabled ? "" : "disabled"}>
+              <span class="day-sep">–</span>
+              <input type="time" class="f-day-end" data-i="${i}" data-day="${d}" value="${dw.end}" ${dw.enabled ? "" : "disabled"}>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="hint">Toggle a day on, then optionally set its own start-time window. Leave a day's times blank to match any time that day. No days toggled = matches any day.</div>
+        <div class="preset-row">
+          <span class="preset-label">Quick-set enabled days:</span>
+          <button type="button" class="preset-btn" data-i="${i}" data-preset="ranna">Ranná 6–14</button>
+          <button type="button" class="preset-btn" data-i="${i}" data-preset="poobedna">Poobedná 14–22</button>
+          <button type="button" class="preset-btn" data-i="${i}" data-preset="nocna">Nočná 22–6</button>
+        </div>
+        <button type="button" class="mini-btn" data-i="${i}">Copy first day's time to all enabled days</button>
+      </label>
+      <label class="field">
+        <span class="field-label">Shift duration (hours)</span>
+        <div class="row-2">
+          <input type="number" min="0" step="0.5" class="f-dur-min" data-i="${i}" placeholder="min" value="${rule.min_duration_hours}">
+          <input type="number" min="0" step="0.5" class="f-dur-max" data-i="${i}" placeholder="max" value="${rule.max_duration_hours}">
+        </div>
+      </label>
+    `;
+    container.appendChild(block);
+  });
+
+  container.querySelectorAll(".f-title").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].title_keywords = e.target.value; update();
+  }));
+  container.querySelectorAll(".day-toggle").forEach(el => el.addEventListener("click", e => {
+    const i = e.target.dataset.i, d = e.target.dataset.day;
+    rules[i].dayWindows[d].enabled = !rules[i].dayWindows[d].enabled;
+    render();
+  }));
+  container.querySelectorAll(".f-day-start").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].dayWindows[e.target.dataset.day].start = e.target.value; update();
+  }));
+  container.querySelectorAll(".f-day-end").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].dayWindows[e.target.dataset.day].end = e.target.value; update();
+  }));
+  container.querySelectorAll(".mini-btn").forEach(el => el.addEventListener("click", e => {
+    const i = e.target.dataset.i;
+    const enabledDays = Object.values(rules[i].dayWindows).filter(w => w.enabled);
+    if (!enabledDays.length) return;
+    const { start, end } = enabledDays[0];
+    Object.values(rules[i].dayWindows).forEach(w => { if (w.enabled) { w.start = start; w.end = end; } });
+    render();
+  }));
+  container.querySelectorAll(".preset-btn").forEach(el => el.addEventListener("click", e => {
+    const i = e.target.dataset.i;
+    const preset = PRESET_TIMES[e.target.dataset.preset];
+    const enabledDays = Object.values(rules[i].dayWindows).filter(w => w.enabled);
+    if (!enabledDays.length) return; // nothing toggled on yet -- no-op
+    enabledDays.forEach(w => { w.start = preset.start; w.end = preset.end; });
+    render();
+  }));
+  container.querySelectorAll(".f-dur-min").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].min_duration_hours = e.target.value; update();
+  }));
+  container.querySelectorAll(".f-dur-max").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].max_duration_hours = e.target.value; update();
+  }));
+  container.querySelectorAll(".remove-rule").forEach(el => el.addEventListener("click", e => {
+    rules.splice(parseInt(e.target.dataset.i), 1);
+    render();
+  }));
+  container.querySelectorAll(".reorder-btn").forEach(el => el.addEventListener("click", e => {
+    const i = parseInt(e.target.dataset.i);
+    const dir = parseInt(e.target.dataset.dir);
+    const j = i + dir;
+    [rules[i], rules[j]] = [rules[j], rules[i]];
+    render();
+  }));
+
+  update();
+}
+
+function toJsonRules() {
+  return rules.map(r => {
+    const out = {};
+    const kws = r.title_keywords.split(",").map(s => s.trim()).filter(Boolean);
+    if (kws.length) out.title_keywords = kws;
+
+    const dayWindowsOut = {};
+    Object.entries(r.dayWindows).forEach(([d, w]) => {
+      if (w.enabled) {
+        const entry = {};
+        if (w.start) entry.start = w.start;
+        if (w.end) entry.end = w.end;
+        dayWindowsOut[d] = entry;
+      }
+    });
+    if (Object.keys(dayWindowsOut).length > 0) {
+      out.day_windows = dayWindowsOut;
+    }
+    // If zero days are toggled on, day_windows is omitted entirely, which
+    // matches any day (documented in the field hint above).
+
+    if (r.min_duration_hours !== "") out.min_duration_hours = parseFloat(r.min_duration_hours);
+    if (r.max_duration_hours !== "") out.max_duration_hours = parseFloat(r.max_duration_hours);
+    return out;
+  });
+}
+
+// Example shift used purely for the live preview ticket.
+const EXAMPLE_SHIFT = {
+  title: "Nitra VAS",
+  day: 3, // Thursday
+  start: "14:00",
+  end: "22:00",
+  duration_hours: 8,
+};
+
+// Nicknames that expand to the real substring to search for in a shift's
+// title -- mirrors TITLE_ALIASES in watch_shifts.py. Matching checks both
+// the typed keyword and its alias, so this is purely additive.
+const TITLE_ALIASES = { "pac": "P&C" };
+
+// Real shift-title terms seen on this account so far. Extend this list if
+// new shift types show up -- it's only used to power "did you mean...?"
+// typo suggestions, so it's safe/low-stakes to keep loosely up to date.
+const KNOWN_SHIFT_TERMS = ["VAS", "P&C"];
+
+const ALL_KNOWN_TERMS = [...new Set([
+  ...KNOWN_SHIFT_TERMS,
+  ...Object.keys(TITLE_ALIASES),
+  ...Object.values(TITLE_ALIASES),
+])];
+
+function resolveKeywordVariants(keyword) {
+  const variants = [keyword];
+  const alias = TITLE_ALIASES[keyword.trim().toLowerCase()];
+  if (alias) variants.push(alias);
+  return variants;
+}
+
+function levenshtein(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const dp = [];
+  for (let i = 0; i <= a.length; i++) dp.push([i]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Finds close-but-not-exact typos among comma-separated typed keywords,
+// e.g. "vsa" -> suggest "VAS". Exact matches (including known aliases)
+// are left alone -- this only fires for plausible typos, not unrelated text.
+function findTypoSuggestions(rawValue) {
+  const terms = rawValue.split(",").map(s => s.trim()).filter(Boolean);
+  const suggestions = [];
+  for (const term of terms) {
+    const lower = term.toLowerCase();
+    if (ALL_KNOWN_TERMS.some(k => k.toLowerCase() === lower)) continue;
+    let best = null, bestDist = Infinity;
+    for (const known of ALL_KNOWN_TERMS) {
+      const dist = levenshtein(term, known);
+      if (dist < bestDist) { bestDist = dist; best = known; }
+    }
+    if (!best) continue;
+    const threshold = Math.max(1, Math.floor(best.length / 3));
+    if (bestDist > 0 && bestDist <= threshold) {
+      suggestions.push({ typed: term, suggestion: best });
+    }
+  }
+  return suggestions;
+}
+
+function renderTypoHint(i) {
+  const el = document.getElementById(`typo-hint-${i}`);
+  if (!el || !rules[i]) return;
+  const suggestions = findTypoSuggestions(rules[i].title_keywords);
+  if (suggestions.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = suggestions.map((s, si) =>
+    `Did you mean <button type="button" class="typo-fix-btn" data-si="${si}">"${escapeHtml(s.suggestion)}"</button> instead of "${escapeHtml(s.typed)}"?`
+  ).join(" ");
+  el.querySelectorAll(".typo-fix-btn").forEach((btn, si) => {
+    btn.addEventListener("click", () => {
+      const s = suggestions[si];
+      const terms = rules[i].title_keywords.split(",").map(t => t.trim());
+      rules[i].title_keywords = terms.map(t => t === s.typed ? s.suggestion : t).join(", ");
+      const inputEl = container.querySelector(`.f-title[data-i="${i}"]`);
+      if (inputEl) inputEl.value = rules[i].title_keywords;
+      update();
+    });
+  });
+}
+
+function exampleMatchesRule(jsonRule) {
+  if (jsonRule.title_keywords) {
+    const allVariants = jsonRule.title_keywords.flatMap(resolveKeywordVariants);
+    if (!allVariants.some(v => EXAMPLE_SHIFT.title.toLowerCase().includes(v.toLowerCase()))) return false;
+  }
+
+  if (jsonRule.day_windows) {
+    const w = jsonRule.day_windows[EXAMPLE_SHIFT.day];
+    if (!w) return false;
+    if (w.start && w.end) {
+      if (w.start <= w.end) {
+        if (!(EXAMPLE_SHIFT.start >= w.start && EXAMPLE_SHIFT.start <= w.end)) return false;
+      } else {
+        // Overnight window (e.g. 22:00-06:00) -- wraps past midnight.
+        if (!(EXAMPLE_SHIFT.start >= w.start || EXAMPLE_SHIFT.start <= w.end)) return false;
+      }
+    } else if (w.start) {
+      if (EXAMPLE_SHIFT.start < w.start) return false;
+    } else if (w.end) {
+      if (EXAMPLE_SHIFT.start > w.end) return false;
+    }
+  }
+
+  if (jsonRule.min_duration_hours !== undefined && EXAMPLE_SHIFT.duration_hours < jsonRule.min_duration_hours) return false;
+  if (jsonRule.max_duration_hours !== undefined && EXAMPLE_SHIFT.duration_hours > jsonRule.max_duration_hours) return false;
+  return true;
+}
+
+function update() {
+  const jsonRules = toJsonRules();
+  const config = { rules: jsonRules };
+  document.getElementById("json-out").value = JSON.stringify(config, null, 2);
+
+  document.getElementById("preview-title").textContent = EXAMPLE_SHIFT.title;
+  document.getElementById("preview-day").textContent = DAY_LABELS[EXAMPLE_SHIFT.day];
+  document.getElementById("preview-time").textContent = `${EXAMPLE_SHIFT.start} – ${EXAMPLE_SHIFT.end}`;
+
+  const matchIndex = jsonRules.findIndex(r => exampleMatchesRule(r));
+  const dot = document.getElementById("preview-dot");
+  const status = document.getElementById("preview-status");
+  if (jsonRules.length === 0) {
+    dot.classList.add("no-match");
+    status.textContent = "No rules yet -- nothing will be auto-picked";
+  } else if (matchIndex >= 0) {
+    dot.classList.remove("no-match");
+    status.textContent = `Matches rule ${matchIndex + 1} (priority ${matchIndex + 1})`;
+  } else {
+    dot.classList.add("no-match");
+    status.textContent = "Does not match any rule";
+  }
+
+  renderRuleSummary(jsonRules);
+  rules.forEach((_, i) => renderTypoHint(i));
+}
+
+function dayPillsHtml(dayWindows) {
+  if (!dayWindows || Object.keys(dayWindows).length === 0) {
+    return `<span class="day-pill any">Any day, any time</span>`;
+  }
+  return Object.entries(dayWindows)
+    .sort(([a], [b]) => a - b)
+    .map(([d, w]) => {
+      const label = DAY_LABELS[d];
+      let time = "any time";
+      if (w.start && w.end) time = `${w.start}\u2013${w.end}`;
+      else if (w.start) time = `from ${w.start}`;
+      else if (w.end) time = `until ${w.end}`;
+      return `<span class="day-pill"><span class="day-name">${label}</span>${time}</span>`;
+    })
+    .join("");
+}
+
+function renderRuleSummary(jsonRules) {
+  if (jsonRules.length === 0) {
+    ruleSummaryEl.innerHTML = `<div class="empty-hint">No rules configured -- the auto-picker won't claim anything right now.</div>`;
+    return;
+  }
+  ruleSummaryEl.innerHTML = jsonRules.map((r, i) => {
+    const keywordPill = r.title_keywords
+      ? `<span class="keyword-pill">${r.title_keywords.map(k => {
+          const alias = TITLE_ALIASES[k.trim().toLowerCase()];
+          return alias ? `"${k}" (= "${alias}")` : `"${k}"`;
+        }).join(" or ")}</span>`
+      : `<span class="keyword-pill any">any title</span>`;
+
+    let durationPill = "";
+    if (r.min_duration_hours !== undefined || r.max_duration_hours !== undefined) {
+      const min = r.min_duration_hours !== undefined ? r.min_duration_hours : "0";
+      const max = r.max_duration_hours !== undefined ? r.max_duration_hours : "\u221e";
+      durationPill = `<span class="duration-pill">${min}\u2013${max}h</span>`;
+    }
+
+    return `
+      <div class="rule-summary-card">
+        <div class="rule-summary-header">
+          <span class="priority-badge">PRIORITY ${i + 1}</span>
+          ${keywordPill}
+          ${durationPill}
+        </div>
+        <div class="rule-summary-section-label">Applies on</div>
+        <div class="rule-summary-days">
+          ${dayPillsHtml(r.day_windows)}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+
+document.getElementById("add-rule").addEventListener("click", () => {
+  rules.push(defaultRule());
+  render();
+});
+
+document.getElementById("clear-all-btn").addEventListener("click", async () => {
+  const connected = ghOwnerEl.value.trim() && ghRepoEl.value.trim() && ghTokenEl.value.trim();
+  const msg = connected
+    ? "Delete ALL auto-pick rules? This clears the editor AND immediately saves an empty rule list to GitHub -- the auto-picker will stop claiming anything as soon as the next check runs."
+    : "Clear all auto-pick rules in the editor? You're not connected to GitHub right now, so this only clears what you see here -- it won't affect anything already saved. Connect above (or use Copy JSON) if you want this to actually take effect.";
+  if (!confirm(msg)) return;
+  rules = [];
+  render();
+  if (connected) {
+    await saveToGithub();
+  }
+});
+
+document.getElementById("copy-btn").addEventListener("click", () => {
+  const ta = document.getElementById("json-out");
+  ta.select();
+  document.execCommand("copy");
+  const msg = document.getElementById("copied-msg");
+  msg.classList.add("show");
+  setTimeout(() => msg.classList.remove("show"), 1500);
+});
+
+// --- GitHub direct-save integration ---------------------------------------
+
+const ghOwnerEl = document.getElementById("gh-owner");
+const ghRepoEl = document.getElementById("gh-repo");
+const ghTokenEl = document.getElementById("gh-token");
+const ghRememberEl = document.getElementById("gh-remember");
+const connStatusEl = document.getElementById("conn-status");
+const saveBannerEl = document.getElementById("save-banner");
+const ruleSummaryEl = document.getElementById("rule-summary");
+
+// Owner/repo aren't sensitive, so they're always remembered on this device
+// once entered. The token is only remembered if "Remember on this device"
+// is checked, and lives in a separate storage key.
+function loadSavedConnection() {
+  try {
+    const savedRepo = localStorage.getItem("shiftWatcherGithubRepo");
+    if (savedRepo) {
+      const { owner, repo } = JSON.parse(savedRepo);
+      ghOwnerEl.value = owner || "";
+      ghRepoEl.value = repo || "";
+    }
+  } catch (e) { /* ignore corrupt storage */ }
+
+  const savedToken = localStorage.getItem("shiftWatcherGithubToken");
+  if (savedToken) {
+    ghTokenEl.value = savedToken;
+    ghRememberEl.checked = true;
+  }
+  updateConnStatus();
+}
+
+function persistRepoInfo() {
+  const owner = ghOwnerEl.value.trim();
+  const repo = ghRepoEl.value.trim();
+  if (owner && repo) {
+    localStorage.setItem("shiftWatcherGithubRepo", JSON.stringify({ owner, repo }));
+  }
+}
+
+function updateConnStatus() {
+  if (ghOwnerEl.value && ghRepoEl.value && ghTokenEl.value) {
+    connStatusEl.textContent = `Ready to save to ${ghOwnerEl.value}/${ghRepoEl.value}`;
+    connStatusEl.classList.add("connected");
+  } else {
+    connStatusEl.textContent = "Not connected yet -- fill in all three fields above.";
+    connStatusEl.classList.remove("connected");
+  }
+}
+
+[ghOwnerEl, ghRepoEl].forEach(el => el.addEventListener("input", () => { persistRepoInfo(); updateConnStatus(); }));
+ghTokenEl.addEventListener("input", updateConnStatus);
+
+document.getElementById("forget-btn").addEventListener("click", () => {
+  localStorage.removeItem("shiftWatcherGithubRepo");
+  localStorage.removeItem("shiftWatcherGithubToken");
+  ghOwnerEl.value = ""; ghRepoEl.value = ""; ghTokenEl.value = "";
+  ghRememberEl.checked = false;
+  updateConnStatus();
+  showBanner("Forgot saved connection on this device.", true);
+});
+
+function showBanner(text, ok) {
+  saveBannerEl.textContent = text;
+  saveBannerEl.className = "banner show " + (ok ? "ok" : "err");
+}
+
+function utf8ToBase64(str) {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(str)));
+}
+
+function base64ToUtf8(b64) {
+  const binary = atob(b64.replace(/\n/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+// Reads a file's raw text content. Uses the authenticated GitHub API if a
+// token is present (fresher, works for private repos too); otherwise falls
+// back to the public raw-content URL, which needs no auth at all since the
+// repo is public.
+async function fetchFileContent(owner, repo, path) {
+  const token = ghTokenEl.value.trim();
+  if (token) {
+    const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+      headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json" },
+    });
+    if (!resp.ok) throw new Error(`${resp.status}`);
+    const data = await resp.json();
+    return base64ToUtf8(data.content);
+  } else {
+    const resp = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/${path}?t=${Date.now()}`);
+    if (!resp.ok) throw new Error(`${resp.status}`);
+    return await resp.text();
+  }
+}
+
+async function loadExistingConfig(showResultBanner) {
+  const owner = ghOwnerEl.value.trim();
+  const repo = ghRepoEl.value.trim();
+  if (!owner || !repo) return false;
+  try {
+    const text = await fetchFileContent(owner, repo, "config.json");
+    const parsed = JSON.parse(text);
+    rules = Array.isArray(parsed.rules) ? parsed.rules.map(jsonRuleToInternal) : [];
+    render();
+    if (showResultBanner) showBanner("Loaded your existing rules from GitHub.", true);
+    return true;
+  } catch (err) {
+    if (showResultBanner) showBanner(`Couldn't load config.json (${err.message}). Starting fresh is fine if it doesn't exist yet.`, false);
+    return false;
+  }
+}
+
+document.getElementById("reload-btn").addEventListener("click", () => loadExistingConfig(true));
+
+async function saveToGithub() {
+  const owner = ghOwnerEl.value.trim();
+  const repo = ghRepoEl.value.trim();
+  const token = ghTokenEl.value.trim();
+
+  if (!owner || !repo || !token) {
+    showBanner("Fill in username, repo, and token first.", false);
+    return;
+  }
+
+  persistRepoInfo();
+  if (ghRememberEl.checked) {
+    localStorage.setItem("shiftWatcherGithubToken", token);
+  } else {
+    localStorage.removeItem("shiftWatcherGithubToken");
+  }
+
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/config.json`;
+  const headers = {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/vnd.github+json",
+  };
+
+  showBanner("Saving...", true);
+
+  try {
+    // 1. Get the current file's sha (required by GitHub to update a file).
+    let sha;
+    const getResp = await fetch(apiUrl, { headers });
+    if (getResp.ok) {
+      const getData = await getResp.json();
+      sha = getData.sha;
+    } else if (getResp.status !== 404) {
+      const errData = await getResp.json().catch(() => ({}));
+      throw new Error(`Could not read current config.json (${getResp.status}): ${errData.message || getResp.statusText}`);
+    }
+    // 404 is fine -- means config.json doesn't exist yet, we'll create it.
+
+    // 2. Commit the update (or create it, if it didn't exist).
+    const content = document.getElementById("json-out").value;
+    const putResp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Update auto-pick rules via config.html",
+        content: utf8ToBase64(content),
+        sha, // omitted (undefined) if the file didn't exist yet
+        branch: "main",
+      }),
+    });
+
+    if (!putResp.ok) {
+      const errData = await putResp.json().catch(() => ({}));
+      throw new Error(`GitHub rejected the save (${putResp.status}): ${errData.message || putResp.statusText}`);
+    }
+
+    showBanner("✓ Saved -- config.json updated on GitHub.", true);
+  } catch (err) {
+    showBanner(`Failed: ${err.message}`, false);
+  }
+}
+
+document.getElementById("save-github-btn").addEventListener("click", saveToGithub);
+
+(async () => {
+  loadSavedConnection();
+  let loaded = false;
+  if (ghOwnerEl.value && ghRepoEl.value) {
+    loaded = await loadExistingConfig(true); // show banner so it's clear this ran
+  }
+  if (!loaded) {
+    rules = [defaultRule()];
+  }
+  render();
+})();
+
+</script>
+</body>
+</html>
