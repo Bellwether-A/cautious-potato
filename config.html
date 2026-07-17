@@ -607,6 +607,21 @@
 
   <div class="grid">
     <div>
+      <div class="card" style="margin-bottom: 20px;">
+        <h2>Safety limit</h2>
+        <label class="field" style="margin-bottom: 0;">
+          <span class="field-label">Max auto-claimed shifts per calendar day</span>
+          <input type="number" min="1" step="1" id="max-shifts-per-day" value="1" style="max-width: 100px;">
+          <div class="hint">
+            Applies across all rules combined -- e.g. with this set to 1, if
+            both a "ranná" and a "poobedná" shift for the same day become
+            available in one check and both match your rules, only the
+            higher-priority one gets claimed; the other is skipped and
+            flagged in the WhatsApp message. Doesn't affect shifts you
+            already had before this limit existed.
+          </div>
+        </label>
+      </div>
       <div id="rules-container"></div>
       <div class="actions">
         <button class="add-rule" id="add-rule" style="flex:1">+ Add another rule</button>
@@ -1005,10 +1020,10 @@ function exampleMatchesRule(jsonRule) {
     if (!w) return false;
     if (w.start && w.end) {
       if (w.start <= w.end) {
-        if (!(EXAMPLE_SHIFT.start >= w.start && EXAMPLE_SHIFT.start <= w.end)) return false;
+        if (!(EXAMPLE_SHIFT.start >= w.start && EXAMPLE_SHIFT.start < w.end)) return false;
       } else {
         // Overnight window (e.g. 22:00-06:00) -- wraps past midnight.
-        if (!(EXAMPLE_SHIFT.start >= w.start || EXAMPLE_SHIFT.start <= w.end)) return false;
+        if (!(EXAMPLE_SHIFT.start >= w.start || EXAMPLE_SHIFT.start < w.end)) return false;
       }
     } else if (w.start) {
       if (EXAMPLE_SHIFT.start < w.start) return false;
@@ -1024,7 +1039,9 @@ function exampleMatchesRule(jsonRule) {
 
 function update() {
   const jsonRules = toJsonRules();
-  const config = { rules: jsonRules };
+  const maxPerDayEl = document.getElementById("max-shifts-per-day");
+  const maxPerDay = maxPerDayEl ? (parseInt(maxPerDayEl.value, 10) || 1) : 1;
+  const config = { rules: jsonRules, max_shifts_per_day: maxPerDay };
   document.getElementById("json-out").value = JSON.stringify(config, null, 2);
 
   document.getElementById("preview-title").textContent = EXAMPLE_SHIFT.title;
@@ -1102,6 +1119,8 @@ function renderRuleSummary(jsonRules) {
   }).join("");
 }
 
+
+document.getElementById("max-shifts-per-day").addEventListener("input", update);
 
 document.getElementById("add-rule").addEventListener("click", () => {
   rules.push(defaultRule());
@@ -1235,6 +1254,8 @@ async function loadExistingConfig(showResultBanner) {
     const text = await fetchFileContent(owner, repo, "config.json");
     const parsed = JSON.parse(text);
     rules = Array.isArray(parsed.rules) ? parsed.rules.map(jsonRuleToInternal) : [];
+    const maxPerDayEl = document.getElementById("max-shifts-per-day");
+    if (maxPerDayEl) maxPerDayEl.value = parsed.max_shifts_per_day || 1;
     render();
     if (showResultBanner) showBanner("Loaded your existing rules from GitHub.", true);
     return true;
