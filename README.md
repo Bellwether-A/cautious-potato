@@ -78,6 +78,45 @@ By default the script checks the next 60 days. To change this, add a
 repository secret (or just edit the default in `watch_shifts.py`) called
 `LOOKAHEAD_DAYS`.
 
+## Auto-pick rules (optional)
+
+You can define rules for shifts you'd like picked up automatically — by
+shift title keywords, per-day start-time windows, and/or duration.
+**Auto-claiming is live**: when a new shift matches a rule, the watcher
+actually claims it on smeny.cz for you (via the same request the site
+itself sends), not just notifies you.
+
+**Setting your rules:**
+1. Open `config.html` — either double-click the file locally, or (better,
+   so it works from your phone too) visit
+   `https://YOUR-USERNAME.github.io/YOUR-REPO/config.html` once GitHub
+   Pages is enabled (Settings → Pages → Deploy from branch `main` → `/root`).
+2. Enter your GitHub username + repo name once at the top — the page then
+   automatically loads your *existing* saved rules (if any) so you're
+   always editing/adding onto what you already had, never starting blank.
+3. Adjust rules — each rule can enable specific days of the week, each
+   with its **own** start-time window (e.g. Mondays 06:00-14:00, Thursdays
+   14:00-22:00), plus optional title keywords and duration bounds.
+4. **Priority**: if two available shifts overlap in time and both match
+   your rules, only one can actually be worked — the watcher claims
+   whichever matches the **higher-priority rule** (rules are numbered in
+   the order they appear; use the ↑/↓ buttons on each rule to reorder).
+   The other gets skipped and flagged in the WhatsApp message rather than
+   silently double-booking you.
+5. Click **Save to GitHub** (needs a token, see below) or copy the JSON
+   and paste it into `config.json` manually.
+6. **Clear all**: the "Clear all" button next to "+ Add another rule"
+   wipes your rule list in the editor (nothing is saved/lost until you
+   click Save/Copy afterward, so it's safe to experiment).
+
+**Your active rules, in plain terms:** the same page shows a plain-
+language readback of your current rules right below the editor (e.g.
+"Rule 1 (priority 1): title contains "VAS" · Mon 06:00–14:00, Thu
+14:00–22:00 · 4–10h long") so you can see at a glance what you've got
+configured, without having to parse the raw JSON. This is generated
+entirely from what's already on the page — no extra data pulled from
+GitHub or smeny.cz for this part.
+
 ## Notes / limits
 
 - CallMeBot is a free hobby service maintained by a third party, not an
