@@ -830,6 +830,7 @@ function render() {
           <input type="number" min="0" step="0.5" class="f-dur-min" data-i="${i}" placeholder="min" value="${rule.min_duration_hours}">
           <input type="number" min="0" step="0.5" class="f-dur-max" data-i="${i}" placeholder="max" value="${rule.max_duration_hours}">
         </div>
+        <button type="button" class="preset-btn duration-preset-btn" data-i="${i}" data-hours="8" style="margin-top: 8px;">8h shift</button>
       </label>
     `;
     container.appendChild(block);
@@ -857,12 +858,19 @@ function render() {
     Object.values(rules[i].dayWindows).forEach(w => { if (w.enabled) { w.start = start; w.end = end; } });
     render();
   }));
-  container.querySelectorAll(".preset-btn").forEach(el => el.addEventListener("click", e => {
+  container.querySelectorAll(".preset-btn[data-preset]").forEach(el => el.addEventListener("click", e => {
     const i = e.target.dataset.i;
     const preset = PRESET_TIMES[e.target.dataset.preset];
     const enabledDays = Object.values(rules[i].dayWindows).filter(w => w.enabled);
     if (!enabledDays.length) return; // nothing toggled on yet -- no-op
     enabledDays.forEach(w => { w.start = preset.start; w.end = preset.end; });
+    render();
+  }));
+  container.querySelectorAll(".duration-preset-btn").forEach(el => el.addEventListener("click", e => {
+    const i = e.target.dataset.i;
+    const hours = e.target.dataset.hours;
+    rules[i].min_duration_hours = hours;
+    rules[i].max_duration_hours = hours;
     render();
   }));
   container.querySelectorAll(".f-dur-min").forEach(el => el.addEventListener("input", e => {
@@ -1100,7 +1108,9 @@ function renderRuleSummary(jsonRules) {
     if (r.min_duration_hours !== undefined || r.max_duration_hours !== undefined) {
       const min = r.min_duration_hours !== undefined ? r.min_duration_hours : "0";
       const max = r.max_duration_hours !== undefined ? r.max_duration_hours : "\u221e";
-      durationPill = `<span class="duration-pill">${min}\u2013${max}h</span>`;
+      durationPill = min === max
+        ? `<span class="duration-pill">exactly ${min}h</span>`
+        : `<span class="duration-pill">${min}\u2013${max}h</span>`;
     }
 
     return `
