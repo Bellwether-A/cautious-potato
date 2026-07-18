@@ -1,6 +1,4 @@
 {
-  "rules": [
-    {}
-  ],
+  "rules": [],
   "max_shifts_per_day": 1
 }
