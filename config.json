@@ -1,4 +1,22 @@
 {
-  "rules": [],
+  "rules": [
+    {
+      "title_keywords": [
+        "pac"
+      ],
+      "day_windows": {
+        "1": {
+          "start": "14:00",
+          "end": "22:00"
+        },
+        "2": {
+          "start": "14:00",
+          "end": "22:00"
+        }
+      },
+      "min_duration_hours": 8,
+      "max_duration_hours": 8
+    }
+  ],
   "max_shifts_per_day": 1
 }
