@@ -372,6 +372,7 @@
   .banner.show { display: block; }
   .banner.ok { background: #163a2b; border: 1px solid var(--green); color: #b6f0cf; }
   .banner.err { background: #3a1e1c; border: 1px solid var(--red); color: #ffc7c0; }
+  .banner.info { background: #3a2e12; border: 1px solid var(--amber-dim); color: #ffd699; }
 
   .conn-status {
     font-size: 12px;
@@ -1217,12 +1218,16 @@ document.getElementById("forget-btn").addEventListener("click", () => {
   ghOwnerEl.value = ""; ghRepoEl.value = ""; ghTokenEl.value = "";
   ghRememberEl.checked = false;
   updateConnStatus();
-  showBanner("Forgot saved connection on this device.", true);
+  showBanner("Forgot saved connection on this device.", "info");
 });
 
-function showBanner(text, ok) {
+function showBanner(text, type) {
+  // Accepts "ok" | "err" | "info", or the older boolean form (true="ok", false="err").
+  let cls = type;
+  if (type === true) cls = "ok";
+  else if (type === false) cls = "err";
   saveBannerEl.textContent = text;
-  saveBannerEl.className = "banner show " + (ok ? "ok" : "err");
+  saveBannerEl.className = "banner show " + cls;
 }
 
 function utf8ToBase64(str) {
@@ -1267,7 +1272,7 @@ async function loadExistingConfig(showResultBanner) {
     const maxPerDayEl = document.getElementById("max-shifts-per-day");
     if (maxPerDayEl) maxPerDayEl.value = parsed.max_shifts_per_day || 1;
     render();
-    if (showResultBanner) showBanner("Loaded your existing rules from GitHub.", true);
+    if (showResultBanner) showBanner("Loaded your existing rules from GitHub.", "info");
     return true;
   } catch (err) {
     if (showResultBanner) showBanner(`Couldn't load config.json (${err.message}). Starting fresh is fine if it doesn't exist yet.`, false);
@@ -1300,7 +1305,7 @@ async function saveToGithub() {
     "Accept": "application/vnd.github+json",
   };
 
-  showBanner("Saving...", true);
+  showBanner("Saving...", "info");
 
   try {
     // 1. Get the current file's sha (required by GitHub to update a file).
