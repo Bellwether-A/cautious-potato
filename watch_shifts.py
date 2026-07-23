@@ -31,10 +31,14 @@ RUN MODES
                                         anything smeny.cz-related.
 """
 
+import email
+import email.utils
+import imaplib
 import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -48,6 +52,17 @@ import requests
 
 SMENY_EMAIL = os.environ.get("SMENY_EMAIL")
 SMENY_PASSWORD = os.environ.get("SMENY_PASSWORD")
+
+# smeny.cz added 2FA: a 6-digit code emailed to you, required on every
+# login. To keep this fully automated, the script reads that code straight
+# out of your inbox via IMAP right after triggering login.
+GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+# TODO: confirm these two against a real 2FA email and tighten them --
+# using the sender address (not just a hint) and the exact subject line
+# makes the inbox search far less likely to ever grab the wrong email.
+TWO_FA_SENDER_HINT = os.environ.get("TWO_FA_SENDER_HINT", "info@smeny.cz")
+TWO_FA_SUBJECT_HINT = os.environ.get("TWO_FA_SUBJECT_HINT", "Ověřovací kód pro přihlášení")
 
 # How many days ahead to check for available shifts.
 LOOKAHEAD_DAYS = int(os.environ.get("LOOKAHEAD_DAYS", "60"))
@@ -70,6 +85,7 @@ SHOW_DETAILS_IN_LOGS = os.environ.get("SHOW_DETAILS_IN_LOGS", "false").lower() =
 BASE_URL = "https://smeny.cz"
 LOGIN_PAGE_URL = f"{BASE_URL}/home"
 LOGIN_POST_URL = f"{BASE_URL}/login_check"
+TWO_FA_POST_URL = f"{BASE_URL}/2fa_check"
 CALENDAR_URL = f"{BASE_URL}/calendar"
 
 HEADERS = {
@@ -133,6 +149,98 @@ def save_state(shift_ids: set[str]) -> None:
     )
 
 
+def _extract_email_text(msg: email.message.Message) -> str:
+    if msg.is_multipart():
+        parts = []
+        for part in msg.walk():
+            if part.get_content_type() in ("text/plain", "text/html"):
+                payload = part.get_payload(decode=True)
+                if payload:
+                    charset = part.get_content_charset() or "utf-8"
+                    parts.append(payload.decode(charset, errors="ignore"))
+        return "\n".join(parts)
+    payload = msg.get_payload(decode=True)
+    if not payload:
+        return ""
+    return payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+
+
+def _try_fetch_2fa_code(after_ts: float) -> str | None:
+    """Look for the newest email received after after_ts that looks like
+    the 2FA code email, and pull a 6-digit code out of it. Returns None
+    (not an error) if nothing matching has arrived yet -- the caller polls."""
+    imap = imaplib.IMAP4_SSL("imap.gmail.com")
+    try:
+        imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        imap.select("INBOX")
+
+        criteria = ["FROM", f'"{TWO_FA_SENDER_HINT}"']
+        if TWO_FA_SUBJECT_HINT:
+            criteria += ["SUBJECT", f'"{TWO_FA_SUBJECT_HINT}"']
+
+        # The subject has Czech diacritics (Ověřovací...), which plain
+        # US-ASCII IMAP search (imaplib's default) can't match -- encode
+        # as UTF-8 and tell the server explicitly when any criterion has
+        # non-ASCII characters.
+        if any(not c.isascii() for c in criteria):
+            encoded = [c.encode("utf-8") if not c.isascii() else c for c in criteria]
+            status, data = imap.search("UTF-8", *encoded)
+        else:
+            status, data = imap.search(None, *criteria)
+        if status != "OK" or not data or not data[0]:
+            return None
+
+        # Check the newest few messages, most recent first.
+        msg_ids = data[0].split()[-10:][::-1]
+        for msg_id in msg_ids:
+            status, msg_data = imap.fetch(msg_id, "(RFC822)")
+            if status != "OK" or not msg_data or not msg_data[0]:
+                continue
+            msg = email.message_from_bytes(msg_data[0][1])
+
+            date_header = msg.get("Date")
+            if not date_header:
+                continue
+            try:
+                msg_ts = email.utils.parsedate_to_datetime(date_header).timestamp()
+            except (TypeError, ValueError):
+                continue
+            # 30s buffer for clock skew between smeny.cz's mail server and
+            # wherever this script is running.
+            if msg_ts < after_ts - 30:
+                continue
+
+            body = _extract_email_text(msg)
+            match = re.search(r"\b(\d{6})\b", body)
+            if match:
+                return match.group(1)
+        return None
+    finally:
+        imap.logout()
+
+
+def fetch_2fa_code(after_ts: float, timeout_seconds: int = 90, poll_interval: int = 5) -> str:
+    """Poll the inbox for up to timeout_seconds for a 2FA code email sent
+    after after_ts (the moment we submitted the login form)."""
+    require_env("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD")
+    deadline = time.time() + timeout_seconds
+    attempt = 0
+    while True:
+        attempt += 1
+        code = _try_fetch_2fa_code(after_ts)
+        if code:
+            log(f"Found 2FA code in inbox (attempt {attempt}).")
+            return code
+        if time.time() >= deadline:
+            log(f"ERROR: no 2FA code email found within {timeout_seconds}s. "
+                "Check TWO_FA_SENDER_HINT/TWO_FA_SUBJECT_HINT match the "
+                "real email, and that GMAIL_ADDRESS/GMAIL_APP_PASSWORD are "
+                "correct.")
+            sys.exit(1)
+        log(f"No 2FA code yet (attempt {attempt}), waiting {poll_interval}s...")
+        time.sleep(poll_interval)
+
+
 def login() -> requests.Session:
     session = requests.Session()
     session.headers.update(HEADERS)
@@ -148,6 +256,7 @@ def login() -> requests.Session:
         sys.exit(1)
     csrf_token = match.group(1)
 
+    login_attempt_ts = time.time()
     log("Submitting login form")
     resp = session.post(
         LOGIN_POST_URL,
@@ -165,6 +274,35 @@ def login() -> requests.Session:
             "form after submitting). Double-check SMENY_EMAIL / "
             "SMENY_PASSWORD secrets.")
         sys.exit(1)
+
+    if resp.url.rstrip("/").endswith("/2fa"):
+        log("2FA required -- waiting for the verification code email...")
+        code_match = CSRF_RE.search(resp.text)
+        if not code_match:
+            log("ERROR: could not find _csrf_token on the /2fa page. "
+                "smeny.cz may have changed this form -- inspect it manually.")
+            sys.exit(1)
+        two_fa_csrf_token = code_match.group(1)
+
+        auth_code = fetch_2fa_code(after_ts=login_attempt_ts)
+
+        log("Submitting 2FA code")
+        resp = session.post(
+            TWO_FA_POST_URL,
+            data={
+                "_auth_code": auth_code,
+                "_csrf_token": two_fa_csrf_token,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+
+        if resp.url.rstrip("/").endswith("/2fa"):
+            log("ERROR: still on the /2fa page after submitting the code -- "
+                "it was likely wrong, expired, or already used. Check "
+                "TWO_FA_SENDER_HINT/TWO_FA_SUBJECT_HINT aren't matching a "
+                "stale email.")
+            sys.exit(1)
 
     log("Login looks successful.")
     return session
@@ -272,6 +410,35 @@ def resolve_keyword_variants(keyword: str) -> list[str]:
     return variants
 
 
+def resolve_date_range_bounds(date_range: dict | None) -> tuple[date, date] | None:
+    """Turns a rule's date_range into a concrete (start_date, end_date), or
+    None if there's no restriction. "this_week"/"next_week" are resolved
+    relative to *today* (whenever this actually runs), not baked in at
+    config-save time, so they stay correct as calendar weeks roll over.
+    Weeks run Monday-Sunday, matching smeny.cz's own convention."""
+    if not date_range:
+        return None
+    rtype = date_range.get("type", "none")
+    if rtype == "none":
+        return None
+    if rtype == "this_week":
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        return monday, monday + timedelta(days=6)
+    if rtype == "next_week":
+        today = date.today()
+        monday = today - timedelta(days=today.weekday()) + timedelta(days=7)
+        return monday, monday + timedelta(days=6)
+    if rtype == "custom":
+        try:
+            start = datetime.strptime(date_range["start"], "%Y-%m-%d").date()
+            end = datetime.strptime(date_range["end"], "%Y-%m-%d").date()
+            return start, end
+        except (KeyError, ValueError):
+            return None
+    return None
+
+
 def shift_matches_rule(shift: dict, rule: dict) -> bool:
     title = (shift.get("title") or "").lower()
     keywords = rule.get("title_keywords")
@@ -288,6 +455,12 @@ def shift_matches_rule(shift: dict, rule: dict) -> bool:
         # time/day/duration conditions -- fail closed (does not match) rather
         # than risk a false positive.
         return False
+
+    date_bounds = resolve_date_range_bounds(rule.get("date_range"))
+    if date_bounds:
+        range_start, range_end = date_bounds
+        if not (range_start <= start_dt.date() <= range_end):
+            return False
 
     weekday = start_dt.weekday()  # 0=Mon .. 6=Sun
     start_hm = start_dt.strftime("%H:%M")
