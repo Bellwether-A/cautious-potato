@@ -32,6 +32,7 @@ RUN MODES
 """
 
 import email
+import email.header
 import email.utils
 import imaplib
 import json
@@ -149,6 +150,21 @@ def save_state(shift_ids: set[str]) -> None:
     )
 
 
+def _decode_email_header(raw_value: str) -> str:
+    """Decodes a MIME-encoded header value (e.g. '=?utf-8?q?...?=') into a
+    plain string, handling multi-part/mixed-encoding headers correctly."""
+    if not raw_value:
+        return ""
+    parts = email.header.decode_header(raw_value)
+    decoded = []
+    for text, enc in parts:
+        if isinstance(text, bytes):
+            decoded.append(text.decode(enc or "utf-8", errors="ignore"))
+        else:
+            decoded.append(text)
+    return "".join(decoded)
+
+
 def _extract_email_text(msg: email.message.Message) -> str:
     if msg.is_multipart():
         parts = []
@@ -174,19 +190,12 @@ def _try_fetch_2fa_code(after_ts: float) -> str | None:
         imap.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
 
-        criteria = ["FROM", f'"{TWO_FA_SENDER_HINT}"']
-        if TWO_FA_SUBJECT_HINT:
-            criteria += ["SUBJECT", f'"{TWO_FA_SUBJECT_HINT}"']
-
-        # The subject has Czech diacritics (Ověřovací...), which plain
-        # US-ASCII IMAP search (imaplib's default) can't match -- encode
-        # as UTF-8 and tell the server explicitly when any criterion has
-        # non-ASCII characters.
-        if any(not c.isascii() for c in criteria):
-            encoded = [c.encode("utf-8") if not c.isascii() else c for c in criteria]
-            status, data = imap.search("UTF-8", *encoded)
-        else:
-            status, data = imap.search(None, *criteria)
+        # Only search by sender via IMAP (plain ASCII -- reliable). The
+        # subject has Czech diacritics, and pushing accented text through
+        # the IMAP SEARCH command itself is finicky/server-dependent, so
+        # instead we filter by subject in Python after fetching, which is
+        # far more robust.
+        status, data = imap.search(None, "FROM", f'"{TWO_FA_SENDER_HINT}"')
         if status != "OK" or not data or not data[0]:
             return None
 
@@ -197,6 +206,11 @@ def _try_fetch_2fa_code(after_ts: float) -> str | None:
             if status != "OK" or not msg_data or not msg_data[0]:
                 continue
             msg = email.message_from_bytes(msg_data[0][1])
+
+            if TWO_FA_SUBJECT_HINT:
+                subject = _decode_email_header(msg.get("Subject", ""))
+                if TWO_FA_SUBJECT_HINT not in subject:
+                    continue
 
             date_header = msg.get("Date")
             if not date_header:
