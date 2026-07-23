@@ -18,14 +18,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --quiet -r requirements.txt
 
       - name: Run shift check
         env:
           SMENY_EMAIL: ${{ secrets.SMENY_EMAIL }}
           SMENY_PASSWORD: ${{ secrets.SMENY_PASSWORD }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
           CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
           SHOW_DETAILS_IN_LOGS: "false"
