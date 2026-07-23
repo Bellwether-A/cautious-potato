@@ -97,6 +97,35 @@
 
   label.field:last-child { margin-bottom: 0; }
 
+  /* Mobile-first: on narrow screens, .field-row is just a plain wrapper --
+     its two children stack exactly like any other .field, same spacing as
+     before this layout existed. The side-by-side treatment only applies
+     on wider (desktop) screens, via the min-width query below. */
+  .field-row .field {
+    margin-bottom: 18px;
+  }
+  .field-row .field:last-child {
+    margin-bottom: 18px; /* still followed by the duration field below */
+  }
+
+  @media (min-width: 641px) {
+    .field-row {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .field-row .field {
+      margin-bottom: 0;
+    }
+    .date-range-field {
+      flex: 0 0 220px;
+    }
+    .days-field {
+      flex: 1 1 320px;
+    }
+  }
+
   .field-label {
     display: block;
     font-size: 13px;
@@ -104,7 +133,7 @@
     margin-bottom: 6px;
   }
 
-  input[type="text"], input[type="time"], input[type="number"] {
+  input[type="text"], input[type="time"], input[type="number"], input[type="date"] {
     width: 100%;
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -114,8 +143,25 @@
     font-size: 14px;
     font-family: var(--font-mono);
   }
+  /* Safari/WebKit renders the date-input calendar icon dark-on-dark by
+     default; invert it so it's visible against our dark background. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+  }
 
-  input:focus {
+  select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 9px 11px;
+    font-size: 14px;
+    font-family: var(--font-display);
+    cursor: pointer;
+  }
+
+  input:focus, select:focus {
     outline: 2px solid var(--amber);
     outline-offset: 1px;
   }
@@ -716,6 +762,40 @@
 <script>
 const DAY_LABELS = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"];
 
+// Custom date ranges are entered as "DD.MM" (no year -- always assumed to
+// be this year) and converted to full YYYY-MM-DD only when saving, so
+// watch_shifts.py doesn't need to know about this UI simplification at
+// all. If the end date's month/day comes before the start date's (e.g.
+// 28.12 to 3.1), the end year rolls forward automatically to handle a
+// range that spans New Year's.
+function parseDDMM(str) {
+  const m = (str || "").trim().match(/^(\d{1,2})\.(\d{1,2})\.?$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10), month = parseInt(m[2], 10);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null;
+  return { day, month };
+}
+
+function ddmmPairToFullDates(startStr, endStr) {
+  const start = parseDDMM(startStr);
+  const end = parseDDMM(endStr);
+  if (!start || !end) return null;
+  const year = new Date().getFullYear();
+  const pad = n => String(n).padStart(2, "0");
+  const startFull = `${year}-${pad(start.month)}-${pad(start.day)}`;
+  const startCmp = start.month * 100 + start.day;
+  const endCmp = end.month * 100 + end.day;
+  const endYear = endCmp < startCmp ? year + 1 : year;
+  const endFull = `${endYear}-${pad(end.month)}-${pad(end.day)}`;
+  return { start: startFull, end: endFull };
+}
+
+function fullDateToDDMM(fullDateStr) {
+  const m = (fullDateStr || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  return `${parseInt(m[2], 10)}.${parseInt(m[1], 10)}`;
+}
+
 // Standard shift-time presets seen on this account (matches how smeny.cz
 // itself labels shifts, e.g. "Ranná (06:00-14:00)"). "Nočná" wraps past
 // midnight -- the matching logic below handles that correctly.
@@ -732,6 +812,9 @@ function defaultRule() {
   return {
     title_keywords: "",
     dayWindows,
+    dateRangeType: "none",
+    dateRangeStart: "",
+    dateRangeEnd: "",
     min_duration_hours: "",
     max_duration_hours: "",
   };
@@ -767,9 +850,13 @@ function jsonRuleToInternal(jsonRule) {
     }
   }
 
+  const dr = jsonRule.date_range || {};
   return {
     title_keywords: (jsonRule.title_keywords || []).join(", "),
     dayWindows,
+    dateRangeType: dr.type || "none",
+    dateRangeStart: dr.type === "custom" ? fullDateToDDMM(dr.start) : "",
+    dateRangeEnd: dr.type === "custom" ? fullDateToDDMM(dr.end) : "",
     min_duration_hours: jsonRule.min_duration_hours !== undefined ? String(jsonRule.min_duration_hours) : "",
     max_duration_hours: jsonRule.max_duration_hours !== undefined ? String(jsonRule.max_duration_hours) : "",
   };
@@ -802,29 +889,48 @@ function render() {
         <div class="hint">Leave empty to match any shift title.</div>
         <div class="typo-hint" id="typo-hint-${i}"></div>
       </label>
-      <label class="field">
-        <span class="field-label">Days &amp; start-time windows</span>
-        <div class="day-rows">
-          ${DAY_LABELS.map((label, d) => {
-            const dw = rule.dayWindows[d];
-            return `
-            <div class="day-row">
-              <div class="day-toggle ${dw.enabled ? "active" : ""}" data-i="${i}" data-day="${d}">${label}</div>
-              <input type="time" class="f-day-start" data-i="${i}" data-day="${d}" value="${dw.start}" ${dw.enabled ? "" : "disabled"}>
-              <span class="day-sep">–</span>
-              <input type="time" class="f-day-end" data-i="${i}" data-day="${d}" value="${dw.end}" ${dw.enabled ? "" : "disabled"}>
-            </div>`;
-          }).join("")}
-        </div>
-        <div class="hint">Toggle a day on, then optionally set its own start-time window. Leave a day's times blank to match any time that day. No days toggled = matches any day.</div>
-        <div class="preset-row">
-          <span class="preset-label">Quick-set enabled days:</span>
-          <button type="button" class="preset-btn" data-i="${i}" data-preset="ranna">Ranná 6–14</button>
-          <button type="button" class="preset-btn" data-i="${i}" data-preset="poobedna">Poobedná 14–22</button>
-          <button type="button" class="preset-btn" data-i="${i}" data-preset="nocna">Nočná 22–6</button>
-        </div>
-        <button type="button" class="mini-btn" data-i="${i}">Copy first day's time to all enabled days</button>
-      </label>
+      <div class="field-row">
+        <label class="field date-range-field">
+          <span class="field-label">Which week(s)?</span>
+          <select class="f-date-range-type" data-i="${i}">
+            <option value="none" ${rule.dateRangeType === "none" ? "selected" : ""}>Any week (repeats indefinitely, like before)</option>
+            <option value="this_week" ${rule.dateRangeType === "this_week" ? "selected" : ""}>This week only</option>
+            <option value="next_week" ${rule.dateRangeType === "next_week" ? "selected" : ""}>Next week only</option>
+            <option value="custom" ${rule.dateRangeType === "custom" ? "selected" : ""}>Custom date range</option>
+          </select>
+          ${rule.dateRangeType === "custom" ? `
+            <div class="row-2" style="margin-top: 8px;">
+              <input type="text" class="f-date-range-start" data-i="${i}" placeholder="DD.MM" value="${rule.dateRangeStart}">
+              <input type="text" class="f-date-range-end" data-i="${i}" placeholder="DD.MM" value="${rule.dateRangeEnd}">
+            </div>
+            <div class="hint">Day.Month only, e.g. "20.7" -- always assumed to be this year.</div>
+          ` : ""}
+          <div class="hint">Restricts this rule on top of the day/time settings. "Any week" behaves exactly as before this option existed.</div>
+        </label>
+        <label class="field days-field">
+          <span class="field-label">Days &amp; start-time windows</span>
+          <div class="day-rows">
+            ${DAY_LABELS.map((label, d) => {
+              const dw = rule.dayWindows[d];
+              return `
+              <div class="day-row">
+                <div class="day-toggle ${dw.enabled ? "active" : ""}" data-i="${i}" data-day="${d}">${label}</div>
+                <input type="time" class="f-day-start" data-i="${i}" data-day="${d}" value="${dw.start}" ${dw.enabled ? "" : "disabled"}>
+                <span class="day-sep">–</span>
+                <input type="time" class="f-day-end" data-i="${i}" data-day="${d}" value="${dw.end}" ${dw.enabled ? "" : "disabled"}>
+              </div>`;
+            }).join("")}
+          </div>
+          <div class="hint">Toggle a day on, then optionally set its own start-time window. Leave a day's times blank to match any time that day. No days toggled = matches any day.</div>
+          <div class="preset-row">
+            <span class="preset-label">Quick-set enabled days:</span>
+            <button type="button" class="preset-btn" data-i="${i}" data-preset="ranna">Ranná 6–14</button>
+            <button type="button" class="preset-btn" data-i="${i}" data-preset="poobedna">Poobedná 14–22</button>
+            <button type="button" class="preset-btn" data-i="${i}" data-preset="nocna">Nočná 22–6</button>
+          </div>
+          <button type="button" class="mini-btn" data-i="${i}">Copy first day's time to all enabled days</button>
+        </label>
+      </div>
       <label class="field">
         <span class="field-label">Shift duration (hours)</span>
         <div class="row-2">
@@ -839,6 +945,16 @@ function render() {
 
   container.querySelectorAll(".f-title").forEach(el => el.addEventListener("input", e => {
     rules[e.target.dataset.i].title_keywords = e.target.value; update();
+  }));
+  container.querySelectorAll(".f-date-range-type").forEach(el => el.addEventListener("change", e => {
+    rules[e.target.dataset.i].dateRangeType = e.target.value;
+    render(); // re-render since custom shows/hides the date inputs
+  }));
+  container.querySelectorAll(".f-date-range-start").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].dateRangeStart = e.target.value; update();
+  }));
+  container.querySelectorAll(".f-date-range-end").forEach(el => el.addEventListener("input", e => {
+    rules[e.target.dataset.i].dateRangeEnd = e.target.value; update();
   }));
   container.querySelectorAll(".day-toggle").forEach(el => el.addEventListener("click", e => {
     const i = e.target.dataset.i, d = e.target.dataset.day;
@@ -916,16 +1032,82 @@ function toJsonRules() {
     // If zero days are toggled on, day_windows is omitted entirely, which
     // matches any day (documented in the field hint above).
 
+    if (r.dateRangeType && r.dateRangeType !== "none") {
+      const dr = { type: r.dateRangeType };
+      if (r.dateRangeType === "custom") {
+        const fullDates = ddmmPairToFullDates(r.dateRangeStart, r.dateRangeEnd);
+        if (fullDates) {
+          dr.start = fullDates.start;
+          dr.end = fullDates.end;
+        }
+      }
+      out.date_range = dr;
+    }
+    // "none" (the default) omits date_range entirely -- identical to the
+    // behavior before this option existed.
+
     if (r.min_duration_hours !== "") out.min_duration_hours = parseFloat(r.min_duration_hours);
     if (r.max_duration_hours !== "") out.max_duration_hours = parseFloat(r.max_duration_hours);
     return out;
   });
 }
 
-// Example shift used purely for the live preview ticket.
+// -- Date-range helpers (mirrors resolve_date_range_bounds in watch_shifts.py) --
+
+function mondayOf(d) {
+  const day = (d.getDay() + 6) % 7; // JS getDay(): Sun=0..Sat=6 -> convert to Mon=0..Sun=6
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - day);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(d.getDate() + n);
+  return r;
+}
+function toISODate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+// Returns [startISODate, endISODate] or null if there's no restriction.
+// "this_week"/"next_week" are resolved relative to today (right now, in
+// this browser), same as the Python side resolves them relative to
+// whenever the check actually runs.
+function resolveDateRangeBounds(dateRange) {
+  if (!dateRange || !dateRange.type || dateRange.type === "none") return null;
+  const today = new Date();
+  if (dateRange.type === "this_week") {
+    const monday = mondayOf(today);
+    return [toISODate(monday), toISODate(addDays(monday, 6))];
+  }
+  if (dateRange.type === "next_week") {
+    const monday = addDays(mondayOf(today), 7);
+    return [toISODate(monday), toISODate(addDays(monday, 6))];
+  }
+  if (dateRange.type === "custom") {
+    if (!dateRange.start || !dateRange.end) return null;
+    return [dateRange.start, dateRange.end];
+  }
+  return null;
+}
+
+function getNextOrTodayWeekdayDate(targetWeekday) {
+  const today = new Date();
+  const todayWeekday = (today.getDay() + 6) % 7;
+  const diff = (targetWeekday - todayWeekday + 7) % 7;
+  return addDays(today, diff);
+}
+
+// Example shift used purely for the live preview ticket. Gets a real,
+// concrete date (the next upcoming Thursday, or today if today IS
+// Thursday) so date-range rules ("this week"/"next week"/custom) can be
+// meaningfully previewed too, not just day-of-week/time.
+const EXAMPLE_SHIFT_DAY = 3; // Thursday
 const EXAMPLE_SHIFT = {
   title: "Nitra VAS",
-  day: 3, // Thursday
+  day: EXAMPLE_SHIFT_DAY,
+  date: toISODate(getNextOrTodayWeekdayDate(EXAMPLE_SHIFT_DAY)),
   start: "14:00",
   end: "22:00",
   duration_hours: 8,
@@ -1024,6 +1206,14 @@ function exampleMatchesRule(jsonRule) {
     if (!allVariants.some(v => EXAMPLE_SHIFT.title.toLowerCase().includes(v.toLowerCase()))) return false;
   }
 
+  if (jsonRule.date_range) {
+    const bounds = resolveDateRangeBounds(jsonRule.date_range);
+    if (bounds) {
+      const [rangeStart, rangeEnd] = bounds;
+      if (!(EXAMPLE_SHIFT.date >= rangeStart && EXAMPLE_SHIFT.date <= rangeEnd)) return false;
+    }
+  }
+
   if (jsonRule.day_windows) {
     const w = jsonRule.day_windows[EXAMPLE_SHIFT.day];
     if (!w) return false;
@@ -1114,11 +1304,22 @@ function renderRuleSummary(jsonRules) {
         : `<span class="duration-pill">${min}\u2013${max}h</span>`;
     }
 
+    let dateRangePill = "";
+    if (r.date_range && r.date_range.type && r.date_range.type !== "none") {
+      const t = r.date_range.type;
+      if (t === "this_week") dateRangePill = `<span class="duration-pill">this week only</span>`;
+      else if (t === "next_week") dateRangePill = `<span class="duration-pill">next week only</span>`;
+      else if (t === "custom" && r.date_range.start && r.date_range.end) {
+        dateRangePill = `<span class="duration-pill">${fullDateToDDMM(r.date_range.start)} to ${fullDateToDDMM(r.date_range.end)}</span>`;
+      }
+    }
+
     return `
       <div class="rule-summary-card">
         <div class="rule-summary-header">
           <span class="priority-badge">PRIORITY ${i + 1}</span>
           ${keywordPill}
+          ${dateRangePill}
           ${durationPill}
         </div>
         <div class="rule-summary-section-label">Applies on</div>
