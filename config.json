@@ -5,27 +5,11 @@
         "Pac"
       ],
       "day_windows": {
-        "1": {
-          "start": "06:00",
-          "end": "14:00"
-        },
-        "2": {
-          "start": "06:00",
-          "end": "14:00"
-        },
-        "3": {
-          "start": "06:00",
-          "end": "14:00"
-        },
-        "4": {
-          "start": "06:00",
-          "end": "14:00"
-        },
         "5": {},
         "6": {}
       },
       "date_range": {
-        "type": "next_week"
+        "type": "this_week"
       },
       "min_duration_hours": 8,
       "max_duration_hours": 8
