@@ -1,9 +1,6 @@
 {
   "rules": [
     {
-      "title_keywords": [
-        "Pac"
-      ],
       "day_windows": {
         "5": {},
         "6": {}
