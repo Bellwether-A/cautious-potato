@@ -15,6 +15,11 @@
       },
       "min_duration_hours": 8,
       "max_duration_hours": 8
+    },
+    {
+      "day_windows": {
+        "6": {}
+      }
     }
   ],
   "max_shifts_per_day": 1
