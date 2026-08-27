@@ -1,4 +1,35 @@
 {
-  "rules": [],
+  "rules": [
+    {
+      "title_keywords": [
+        "Pac"
+      ],
+      "day_windows": {
+        "0": {
+          "start": "06:00",
+          "end": "14:00"
+        },
+        "1": {
+          "start": "06:00",
+          "end": "14:00"
+        },
+        "2": {
+          "start": "06:00",
+          "end": "14:00"
+        },
+        "3": {
+          "start": "06:00",
+          "end": "14:00"
+        },
+        "4": {
+          "start": "06:00",
+          "end": "14:00"
+        }
+      },
+      "date_range": {
+        "type": "next_week"
+      }
+    }
+  ],
   "max_shifts_per_day": 1
 }
