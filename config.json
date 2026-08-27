@@ -5,6 +5,15 @@
         "Pac"
       ],
       "day_windows": {
+        "5": {},
+        "6": {}
+      }
+    },
+    {
+      "title_keywords": [
+        "Pac"
+      ],
+      "day_windows": {
         "0": {
           "start": "06:00",
           "end": "14:00"
