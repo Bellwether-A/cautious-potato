@@ -8,6 +8,20 @@
         "5": {},
         "6": {}
       }
+    },
+    {
+      "title_keywords": [
+        "vas"
+      ],
+      "day_windows": {
+        "4": {
+          "start": "14:00",
+          "end": "22:00"
+        }
+      },
+      "date_range": {
+        "type": "next_week"
+      }
     }
   ],
   "max_shifts_per_day": 1
